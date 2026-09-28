@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/store-prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model SchemaMigration {
+  version   Int    @id
+  appliedAt String @map("applied_at")
+
+  @@map("schema_migrations")
+}
+
+model Sale {
+  id            Int     @id @map("salesid")
+  reference     String? @map("salesrefnum")
+  customer      String? @map("salescust")
+  payment       String? @map("salespaym")
+  cashier       String? @map("salescashier")
+  itemCount     Int?    @map("salestotalitem")
+  subtotal      Float?  @map("salessub")
+  totalAmount   Float?  @map("salestotalamount")
+  creditPaid    Float?  @map("salescreditpaid")
+  creditBalance String? @map("salescreditbal")
+  status        String? @map("salestatus")
+  discount      Float?  @map("salesdisc")
+  category      String? @map("salescat")
+  customerId    Int?    @map("salescustid")
+  paymentType   String? @map("salespaytype")
+  totalCost     Float?  @map("salestotalcost")
+  specialDiscount Float? @map("specialdisc")
+  tender        Float?  @map("salestender")
+  change        Float?  @map("saleschange")
+  saleDate      String? @map("salesdate")
+
+  @@index([saleDate])
+  @@index([status])
+  @@map("salestbl")
+}
+
+model CreditPayment {
+  id          Int     @id @map("cpid")
+  reference   String? @map("cprefnum")
+  amount      Float?  @map("cppay")
+  paymentDate String? @map("cppaydate")
+
+  @@index([paymentDate])
+  @@map("creditpaymenttbl")
+}
+
+model SaleItem {
+  id          Int     @id @map("scid")
+  reference   String? @map("screfnum")
+  itemCode    String? @map("scitemcode")
+  description String? @map("scitemdesc")
+  unit        String? @map("scunit")
+  price       Float?  @map("scprice")
+  total       Float?  @map("sctotal")
+  quantity    Int?    @map("scqty")
+  discount    Float?  @map("scdiscount")
+  status      String? @map("scstats")
+  unitCost    Float?  @map("sccost")
+  totalCost   Float?  @map("totalcost")
+  saleDate    String? @map("scdate")
+
+  @@index([reference])
+  @@map("salescart")
+}
+
+model InventoryItem {
+  id          Int     @id @map("itemid")
+  code        String? @map("itemcode")
+  brand       String? @map("itembrand")
+  name        String? @map("itemname")
+  size        String? @map("itemsize")
+  quantity    Int?    @map("itemqty")
+  cost        Float?  @map("itemcost")
+  sellingPrice Float? @map("itemsellprice")
+  category    String? @map("itemcategory")
+  alertLevel  Int?    @map("alertnum")
+  fillQuantity Int?   @map("fillqty")
+  emptyQuantity Int?  @map("emptyqty")
+  warehouseFill Int?  @map("whfill")
+  warehouseEmpty Int? @map("whempty")
+  lentQuantity Int?   @map("lendqty")
+
+  @@index([code])
+  @@map("inventorytbl")
+}
+
+model Customer {
+  id        Int     @id @map("custid")
+  name      String? @map("custname")
+  contact   String? @map("custcontnum")
+  balance   Float?  @map("custbalance")
+  status    String? @map("custstatus")
+
+  @@index([status])
+  @@map("custinfo")
+}
+
+model Transfer {
+  id            Int     @id @map("poutid")
+  reference     String? @map("poutrefnum")
+  transferDate  String? @map("pulldate")
+  supplier      String? @map("pullsupplier")
+  destination   String? @map("pouttransto")
+  totalQuantity Int?    @map("pouttotalqty")
+  totalAmount   Float?  @map("pouttotalamount")
+  encoder       String? @map("poutencoder")
+  status        String? @map("pulloutremarks")
+  type          String? @map("pouttype")
+  restockPrice  Float?  @map("restockprice")
+  notes         String? @map("notes")
+  paymentStatus String? @map("payment_status")
+
+  @@index([transferDate])
+  @@index([status])
+  @@map("pouttbl")
+}
+
+model SupplierRestockPayment {
+  id               Int     @id @map("payment_id")
+  transferId       Int     @map("transfer_id")
+  amount           Float
+  paymentMethod    String  @map("payment_method")
+  paymentReference String  @map("payment_reference")
+  notes            String
+  paidAt           String  @map("paid_at")
+  recordedBy       String  @map("recorded_by")
+  paymentKind      String  @map("payment_kind")
+
+  @@index([transferId])
+  @@map("supplier_restock_payments")
+}
+
+model PettyCashLog {
+  id            Int     @id @map("pettylogid")
+  entryDate     String? @map("pettylogdate")
+  amount        Float?  @map("pettylogamount")
+  entryType     String? @map("pettylogtype")
+  remarks       String? @map("pettylogremarks")
+  paymentMethod String? @map("pettypaymenthod")
+  status        String? @map("pettyref")
+
+  @@index([entryDate])
+  @@map("pettylogstbl")
+}
+
+model SalaryPayment {
+  id            Int     @id @map("salhid")
+  personnel     String? @map("salpersonel")
+  amountPaid    Float?  @map("salpaid")
+  paymentDate   String? @map("saldate")
+  referenceDate String? @map("salrefdate")
+  paidBy        String? @map("salpaidby")
+  remarks       String? @map("salremarks")
+  paymentMethod String? @map("salpaymethod")
+
+  @@index([paymentDate])
+  @@map("salhistory")
+}

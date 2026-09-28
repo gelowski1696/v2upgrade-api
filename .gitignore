@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+data/
+backups/
+.env
+.env.*
+!.env.example
+src/generated/prisma/
+src/generated/store-prisma/
+*.log

@@ -1,0 +1,627 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum BillingInterval {
+  MONTHLY
+  QUARTERLY
+  SEMIANNUAL
+  ANNUAL
+  CUSTOM
+}
+
+enum SubscriptionStatus {
+  DRAFT
+  TRIAL
+  ACTIVE
+  GRACE
+  SUSPENDED
+  EXPIRED
+  CANCELLED
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum StoreStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum PortalRole {
+  OWNER
+  MANAGER
+  VIEWER
+}
+
+enum PortalUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum PortalReportFrequency {
+  DAILY
+  WEEKLY
+}
+
+enum PortalReportDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DELAYED
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+  SKIPPED
+}
+
+enum SnapshotStatus {
+  STAGING
+  VALIDATING
+  READY
+  ACTIVE
+  REJECTED
+  RETIRED
+}
+
+enum UploadSessionStatus {
+  CREATED
+  UPLOADING
+  UPLOADED
+  VALIDATING
+  COMPLETE
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model User {
+  id                   String              @id @default(uuid()) @db.Uuid
+  username             String              @unique @db.VarChar(80)
+  displayName          String              @map("display_name") @db.VarChar(160)
+  passwordHash         String              @map("password_hash") @db.VarChar(255)
+  role                 UserRole            @default(OPERATOR)
+  status               UserStatus          @default(ACTIVE)
+  lastLoginAt          DateTime?           @map("last_login_at") @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  refreshSessions      RefreshSession[]
+  createdSubscriptions Subscription[]      @relation("SubscriptionCreatedBy")
+  subscriptionEvents   SubscriptionEvent[] @relation("SubscriptionEventActor")
+  paymentRecords       PaymentRecord[]     @relation("PaymentCreatedBy")
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshSession {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("refresh_sessions")
+}
+
+model Client {
+  id            String             @id @default(uuid()) @db.Uuid
+  code          String             @unique @db.VarChar(40)
+  businessName  String             @map("business_name") @db.VarChar(180)
+  ownerName     String?            @map("owner_name") @db.VarChar(160)
+  email         String?            @db.VarChar(180)
+  phone         String?            @db.VarChar(50)
+  address       String?
+  notes         String?
+  status        ClientStatus       @default(ACTIVE)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  subscriptions Subscription[]
+  devices       Device[]
+  stores        Store[]
+  portalUsers   PortalUser[]
+  invitations   PortalInvitation[]
+
+  @@index([businessName])
+  @@index([status])
+  @@map("clients")
+}
+
+model Store {
+  id               String                 @id @default(uuid()) @db.Uuid
+  clientId         String                 @map("client_id") @db.Uuid
+  code             String                 @db.VarChar(40)
+  name             String                 @db.VarChar(180)
+  status           StoreStatus            @default(ACTIVE)
+  timezone         String                 @default("Asia/Manila") @db.VarChar(80)
+  activeSnapshotId String?                @unique @map("active_snapshot_id") @db.Uuid
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client           Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  devices          Device[]
+  portalAccess     PortalStoreAccess[]
+  invitations      PortalInvitation[]
+  snapshots        StoreSnapshot[]        @relation("StoreSnapshots")
+  activeSnapshot   StoreSnapshot?         @relation("ActiveStoreSnapshot", fields: [activeSnapshotId], references: [id], onDelete: SetNull)
+  uploadSessions   SyncUploadSession[]
+  reportSchedules  PortalReportSchedule[]
+  salesTargets     PortalSalesTarget[]
+  savedViews       PortalSavedView[]
+
+  @@unique([clientId, code])
+  @@index([clientId, status])
+  @@map("stores")
+}
+
+model PortalUser {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  clientId            String                     @map("client_id") @db.Uuid
+  username            String                     @unique @db.VarChar(180)
+  displayName         String                     @map("display_name") @db.VarChar(160)
+  passwordHash        String                     @map("password_hash") @db.VarChar(255)
+  role                PortalRole                 @default(VIEWER)
+  status              PortalUserStatus           @default(INVITED)
+  passwordChangedAt   DateTime?                  @map("password_changed_at") @db.Timestamptz(3)
+  emailVerifiedAt     DateTime?                  @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt         DateTime?                  @map("last_login_at") @db.Timestamptz(3)
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client              Client                     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  storeAccess         PortalStoreAccess[]
+  refreshSessions     PortalRefreshSession[]
+  passwordResets      PortalPasswordReset[]
+  alertDismissals     PortalAlertDismissal[]
+  emailVerifications  PortalEmailVerification[]
+  reportSchedules     PortalReportSchedule[]
+  salesTargets        PortalSalesTarget[]
+  dashboardPreference PortalDashboardPreference?
+  savedViews          PortalSavedView[]
+
+  @@index([clientId, status])
+  @@map("portal_users")
+}
+
+model PortalAlertDismissal {
+  id           String     @id @default(uuid()) @db.Uuid
+  portalUserId String     @map("portal_user_id") @db.Uuid
+  alertId      String     @map("alert_id") @db.VarChar(255)
+  dismissedAt  DateTime   @default(now()) @map("dismissed_at") @db.Timestamptz(3)
+  user         PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@unique([portalUserId, alertId])
+  @@index([portalUserId, dismissedAt])
+  @@map("portal_alert_dismissals")
+}
+
+model PortalEmailVerification {
+  id           String     @id @default(uuid()) @db.Uuid
+  portalUserId String     @map("portal_user_id") @db.Uuid
+  tokenHash    String     @map("token_hash") @db.Char(64)
+  expiresAt    DateTime   @map("expires_at") @db.Timestamptz(3)
+  usedAt       DateTime?  @map("used_at") @db.Timestamptz(3)
+  revokedAt    DateTime?  @map("revoked_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  user         PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@index([portalUserId, createdAt])
+  @@map("portal_email_verifications")
+}
+
+model PortalReportSchedule {
+  id            String                 @id @default(uuid()) @db.Uuid
+  portalUserId  String                 @map("portal_user_id") @db.Uuid
+  storeId       String                 @map("store_id") @db.Uuid
+  frequency     PortalReportFrequency
+  enabled       Boolean                @default(false)
+  nextRunAt     DateTime?              @map("next_run_at") @db.Timestamptz(3)
+  lastAttemptAt DateTime?              @map("last_attempt_at") @db.Timestamptz(3)
+  lastSuccessAt DateTime?              @map("last_success_at") @db.Timestamptz(3)
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          PortalUser             @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  store         Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  deliveries    PortalReportDelivery[]
+
+  @@unique([portalUserId, storeId, frequency])
+  @@index([enabled, nextRunAt])
+  @@map("portal_report_schedules")
+}
+
+model PortalReportDelivery {
+  id                String                     @id @default(uuid()) @db.Uuid
+  scheduleId        String                     @map("schedule_id") @db.Uuid
+  periodFrom        String                     @map("period_from") @db.VarChar(10)
+  periodTo          String                     @map("period_to") @db.VarChar(10)
+  recipientEmail    String                     @map("recipient_email") @db.VarChar(180)
+  status            PortalReportDeliveryStatus @default(PENDING)
+  attemptCount      Int                        @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime?                  @map("next_attempt_at") @db.Timestamptz(3)
+  snapshotAgeHours  Int?                       @map("snapshot_age_hours")
+  dataQualityStatus String?                    @map("data_quality_status") @db.VarChar(20)
+  warning           String?                    @db.VarChar(255)
+  errorCode         String?                    @map("error_code") @db.VarChar(80)
+  providerMessageId String?                    @unique @map("provider_message_id") @db.VarChar(100)
+  providerStatus    String?                    @map("provider_status") @db.VarChar(40)
+  sentAt            DateTime?                  @map("sent_at") @db.Timestamptz(3)
+  deliveredAt       DateTime?                  @map("delivered_at") @db.Timestamptz(3)
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  schedule          PortalReportSchedule       @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, periodFrom, periodTo])
+  @@index([status, nextAttemptAt])
+  @@index([scheduleId, createdAt])
+  @@map("portal_report_deliveries")
+}
+
+model PortalSalesTarget {
+  id                        String     @id @default(uuid()) @db.Uuid
+  storeId                   String     @map("store_id") @db.Uuid
+  month                     String     @db.VarChar(7)
+  salesTarget               Decimal    @map("sales_target") @db.Decimal(14, 2)
+  recordedGrossProfitTarget Decimal    @map("recorded_gross_profit_target") @db.Decimal(14, 2)
+  updatedByPortalUserId     String     @map("updated_by_portal_user_id") @db.Uuid
+  createdAt                 DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  store                     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  updatedBy                 PortalUser @relation(fields: [updatedByPortalUserId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, month])
+  @@index([updatedByPortalUserId, updatedAt])
+  @@map("portal_sales_targets")
+}
+
+model PortalDashboardPreference {
+  portalUserId    String     @id @map("portal_user_id") @db.Uuid
+  overviewMetrics Json       @map("overview_metrics")
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user            PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@map("portal_dashboard_preferences")
+}
+
+model PortalSavedView {
+  id           String     @id @default(uuid()) @db.Uuid
+  portalUserId String     @map("portal_user_id") @db.Uuid
+  storeId      String     @map("store_id") @db.Uuid
+  name         String     @db.VarChar(80)
+  report       String     @db.VarChar(60)
+  datePreset   String     @map("date_preset") @db.VarChar(24)
+  dateFrom     String?    @map("date_from") @db.VarChar(10)
+  dateTo       String?    @map("date_to") @db.VarChar(10)
+  filters      Json
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user         PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  store        Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([portalUserId, name])
+  @@index([portalUserId, updatedAt])
+  @@index([storeId])
+  @@map("portal_saved_views")
+}
+
+model PortalRefreshSession {
+  id           String     @id @default(uuid()) @db.Uuid
+  portalUserId String     @map("portal_user_id") @db.Uuid
+  tokenHash    String     @map("token_hash") @db.VarChar(255)
+  userAgent    String?    @map("user_agent") @db.VarChar(500)
+  ipAddress    String?    @map("ip_address") @db.VarChar(80)
+  lastUsedAt   DateTime   @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt    DateTime   @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime?  @map("revoked_at") @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  user         PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@index([portalUserId, revokedAt])
+  @@map("portal_refresh_sessions")
+}
+
+model PortalPasswordReset {
+  id                String     @id @default(uuid()) @db.Uuid
+  portalUserId      String     @map("portal_user_id") @db.Uuid
+  tokenHash         String     @unique @map("token_hash") @db.Char(64)
+  expiresAt         DateTime   @map("expires_at") @db.Timestamptz(3)
+  usedAt            DateTime?  @map("used_at") @db.Timestamptz(3)
+  revokedAt         DateTime?  @map("revoked_at") @db.Timestamptz(3)
+  createdByDeviceId String     @map("created_by_device_id") @db.Uuid
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  user              PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  createdByDevice   Device     @relation(fields: [createdByDeviceId], references: [id], onDelete: Restrict)
+
+  @@index([portalUserId, expiresAt])
+  @@map("portal_password_resets")
+}
+
+model PortalStoreAccess {
+  portalUserId String      @map("portal_user_id") @db.Uuid
+  storeId      String      @map("store_id") @db.Uuid
+  roleOverride PortalRole? @map("role_override")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  user         PortalUser  @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  store        Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([portalUserId, storeId])
+  @@index([storeId])
+  @@map("portal_store_access")
+}
+
+model PortalInvitation {
+  id                String     @id @default(uuid()) @db.Uuid
+  clientId          String     @map("client_id") @db.Uuid
+  storeId           String     @map("store_id") @db.Uuid
+  username          String     @db.VarChar(180)
+  displayName       String     @map("display_name") @db.VarChar(160)
+  role              PortalRole
+  tokenHash         String     @unique @map("token_hash") @db.VarChar(255)
+  expiresAt         DateTime   @map("expires_at") @db.Timestamptz(3)
+  acceptedAt        DateTime?  @map("accepted_at") @db.Timestamptz(3)
+  revokedAt         DateTime?  @map("revoked_at") @db.Timestamptz(3)
+  createdByDeviceId String     @map("created_by_device_id") @db.Uuid
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  client            Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  store             Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdByDevice   Device     @relation(fields: [createdByDeviceId], references: [id], onDelete: Restrict)
+
+  @@index([clientId, username])
+  @@index([storeId, expiresAt])
+  @@map("portal_invitations")
+}
+
+model Plan {
+  id        String        @id @default(uuid()) @db.Uuid
+  code      String        @unique @db.VarChar(40)
+  name      String        @db.VarChar(120)
+  status    PlanStatus    @default(DRAFT)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  versions  PlanVersion[]
+
+  @@index([status])
+  @@map("plans")
+}
+
+model PlanVersion {
+  id              String          @id @default(uuid()) @db.Uuid
+  planId          String          @map("plan_id") @db.Uuid
+  version         Int
+  billingInterval BillingInterval @map("billing_interval")
+  amount          Decimal         @db.Decimal(12, 2)
+  currency        String          @default("PHP") @db.Char(3)
+  trialDays       Int             @default(0) @map("trial_days")
+  graceDays       Int             @default(7) @map("grace_days")
+  maxDevices      Int             @default(1) @map("max_devices")
+  features        Json            @default("{}")
+  publishedAt     DateTime?       @map("published_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  plan            Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscriptions   Subscription[]
+
+  @@unique([planId, version])
+  @@index([planId, publishedAt])
+  @@map("plan_versions")
+}
+
+model Subscription {
+  id              String              @id @default(uuid()) @db.Uuid
+  clientId        String              @map("client_id") @db.Uuid
+  planVersionId   String              @map("plan_version_id") @db.Uuid
+  status          SubscriptionStatus  @default(DRAFT)
+  startsAt        DateTime            @map("starts_at") @db.Timestamptz(3)
+  renewsAt        DateTime?           @map("renews_at") @db.Timestamptz(3)
+  expiresAt       DateTime?           @map("expires_at") @db.Timestamptz(3)
+  graceEndsAt     DateTime?           @map("grace_ends_at") @db.Timestamptz(3)
+  suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(3)
+  cancelledAt     DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+  amount          Decimal             @db.Decimal(12, 2)
+  currency        String              @db.Char(3)
+  billingInterval BillingInterval     @map("billing_interval")
+  maxDevices      Int                 @map("max_devices")
+  entitlements    Json                @default("{}")
+  notes           String?
+  createdById     String              @map("created_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client          Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  planVersion     PlanVersion         @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  createdBy       User                @relation("SubscriptionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events          SubscriptionEvent[]
+  devices         Device[]
+  licenseLeases   LicenseLease[]
+  paymentRecords  PaymentRecord[]
+
+  @@index([clientId, status])
+  @@index([status, expiresAt])
+  @@map("subscriptions")
+}
+
+model SubscriptionEvent {
+  id             String              @id @default(uuid()) @db.Uuid
+  subscriptionId String              @map("subscription_id") @db.Uuid
+  fromStatus     SubscriptionStatus? @map("from_status")
+  toStatus       SubscriptionStatus  @map("to_status")
+  reason         String?
+  metadata       Json                @default("{}")
+  actorId        String              @map("actor_id") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  subscription   Subscription        @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  actor          User                @relation("SubscriptionEventActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_events")
+}
+
+model Device {
+  id                   String                @id @default(uuid()) @db.Uuid
+  clientId             String                @map("client_id") @db.Uuid
+  subscriptionId       String?               @map("subscription_id") @db.Uuid
+  storeId              String                @map("store_id") @db.Uuid
+  installationId       String                @unique @map("installation_id") @db.VarChar(120)
+  fingerprintHash      String?               @map("fingerprint_hash") @db.VarChar(255)
+  label                String?               @db.VarChar(120)
+  platform             String                @db.VarChar(40)
+  appVersion           String?               @map("app_version") @db.VarChar(40)
+  status               DeviceStatus          @default(ACTIVE)
+  lastSeenAt           DateTime?             @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt            DateTime?             @map("revoked_at") @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client               Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  subscription         Subscription?         @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  store                Store                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  licenseLeases        LicenseLease[]
+  portalInvitations    PortalInvitation[]
+  portalPasswordResets PortalPasswordReset[]
+  snapshots            StoreSnapshot[]
+  uploadSessions       SyncUploadSession[]
+
+  @@unique([subscriptionId])
+  @@index([clientId, status])
+  @@index([subscriptionId, status])
+  @@index([storeId, status])
+  @@map("devices")
+}
+
+model StoreSnapshot {
+  id                 String         @id @default(uuid()) @db.Uuid
+  storeId            String         @map("store_id") @db.Uuid
+  deviceId           String         @map("device_id") @db.Uuid
+  schemaVersion      Int            @map("schema_version")
+  applicationVersion String         @map("application_version") @db.VarChar(40)
+  fileName           String         @map("file_name") @db.VarChar(255)
+  fileSize           BigInt         @map("file_size")
+  sha256             String         @db.Char(64)
+  status             SnapshotStatus @default(STAGING)
+  snapshotCreatedAt  DateTime       @map("snapshot_created_at") @db.Timestamptz(3)
+  uploadedAt         DateTime       @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  activatedAt        DateTime?      @map("activated_at") @db.Timestamptz(3)
+  rejectionCode      String?        @map("rejection_code") @db.VarChar(80)
+  rejectionMessage   String?        @map("rejection_message")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  store              Store          @relation("StoreSnapshots", fields: [storeId], references: [id], onDelete: Cascade)
+  device             Device         @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+  activeForStore     Store?         @relation("ActiveStoreSnapshot")
+
+  @@unique([storeId, sha256])
+  @@index([storeId, status, uploadedAt])
+  @@map("store_snapshots")
+}
+
+model SyncUploadSession {
+  id                 String              @id @default(uuid()) @db.Uuid
+  storeId            String              @map("store_id") @db.Uuid
+  deviceId           String              @map("device_id") @db.Uuid
+  expectedSize       BigInt              @map("expected_size")
+  expectedSha256     String              @map("expected_sha256") @db.Char(64)
+  schemaVersion      Int                 @map("schema_version")
+  applicationVersion String              @map("application_version") @db.VarChar(40)
+  snapshotCreatedAt  DateTime            @map("snapshot_created_at") @db.Timestamptz(3)
+  status             UploadSessionStatus @default(CREATED)
+  expiresAt          DateTime            @map("expires_at") @db.Timestamptz(3)
+  receivedBytes      BigInt              @default(0) @map("received_bytes")
+  snapshotId         String?             @map("snapshot_id") @db.Uuid
+  rejectionCode      String?             @map("rejection_code") @db.VarChar(80)
+  rejectionMessage   String?             @map("rejection_message")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt        DateTime?           @map("completed_at") @db.Timestamptz(3)
+  store              Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  device             Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status, createdAt])
+  @@index([deviceId, status])
+  @@map("sync_upload_sessions")
+}
+
+model LicenseLease {
+  id             String        @id @default(uuid()) @db.Uuid
+  tokenId        String        @unique @map("token_id") @db.Uuid
+  subscriptionId String        @map("subscription_id") @db.Uuid
+  deviceId       String        @map("device_id") @db.Uuid
+  status         LicenseStatus @default(ACTIVE)
+  issuedAt       DateTime      @default(now()) @map("issued_at") @db.Timestamptz(3)
+  validUntil     DateTime      @map("valid_until") @db.Timestamptz(3)
+  revokedAt      DateTime?     @map("revoked_at") @db.Timestamptz(3)
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  device         Device        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, status])
+  @@index([deviceId, status])
+  @@map("license_leases")
+}
+
+model PaymentRecord {
+  id             String       @id @default(uuid()) @db.Uuid
+  subscriptionId String       @map("subscription_id") @db.Uuid
+  amount         Decimal      @db.Decimal(12, 2)
+  currency       String       @default("PHP") @db.Char(3)
+  reference      String?      @db.VarChar(120)
+  paidAt         DateTime     @map("paid_at") @db.Timestamptz(3)
+  notes          String?
+  createdById    String       @map("created_by_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  createdBy      User         @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId, paidAt])
+  @@map("payment_records")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String?  @map("actor_id") @db.Uuid
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(80)
+  resourceId   String?  @map("resource_id") @db.VarChar(80)
+  requestId    String?  @map("request_id") @db.VarChar(80)
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor        User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
