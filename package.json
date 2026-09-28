@@ -24,6 +24,7 @@
     "db:deploy": "prisma migrate deploy --config prisma7.config.ts",
     "db:studio": "prisma studio --config prisma7.config.ts",
     "admin:create": "tsx src/infrastructure/scripts/create-admin.ts",
+    "demo:seed": "node scripts/seed-demo-portal.mjs",
     "verify:owner-sync": "node scripts/verify-owner-sync.mjs",
     "test:sync:30": "node scripts/test-30-store-sync.mjs",
     "test:sync:security": "node scripts/test-sync-security.mjs",

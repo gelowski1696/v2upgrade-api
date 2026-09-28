@@ -299,6 +299,25 @@ Resend email ID. Configure the Resend webhook URL as
 `email.suppressed`. Signed webhook events update the delivery history with the provider-confirmed
 outcome; unsigned or invalid webhook requests are rejected.
 
+## Multi-Store Demo Data
+
+Create an isolated demo client with five stores, 90 days of different store data, one owner account
+that can view every demo store, and one viewer account limited to each store:
+
+```bash
+npm run demo:seed
+```
+
+The command generates strong passwords and prints all six login credentials once. It also creates
+schema-v27 SQLite snapshots with sales, inventory, filled and empty transfer lines, customers,
+supplier payments, petty cash, payroll, targets, and enabled Feature Mod reports. Rerunning the
+command refreshes only the `DEMO-MULTI-STORE` client and resets only its demo-account passwords.
+Real clients, stores, snapshots, and portal users are not modified.
+
+To provide passwords instead of generating them, set `DEMO_OWNER_PASSWORD` and any of
+`DEMO_STORE_1_PASSWORD` through `DEMO_STORE_5_PASSWORD`. Each supplied password must contain at
+least 12 characters. Do not keep production passwords in source control.
+
 ## Architecture
 
 ```text
