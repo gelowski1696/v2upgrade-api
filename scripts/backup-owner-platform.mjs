@@ -8,6 +8,7 @@ import {
   enforceRetention,
   metadataFingerprint,
   pool,
+  postgresToolDatabaseUrl,
   readBackupMetadata,
   recordBackupOperation,
   runPostgresTool,
@@ -31,7 +32,7 @@ try {
   const snapshots = await copySnapshots(before.snapshots, staging);
   const dumpPath = join(staging, 'metadata.dump');
   runPostgresTool('pg_dump', [
-    `--dbname=${databaseUrl}`,
+    `--dbname=${postgresToolDatabaseUrl(databaseUrl)}`,
     '--format=custom',
     '--no-owner',
     '--no-privileges',

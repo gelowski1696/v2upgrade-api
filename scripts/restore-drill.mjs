@@ -5,6 +5,7 @@ import {
   databaseUrl,
   isPathInside,
   pool,
+  postgresToolDatabaseUrl,
   readDashboardFingerprint,
   recordBackupOperation,
   runPostgresTool,
@@ -29,7 +30,7 @@ try {
   admin = pool(adminUrl.toString());
   await admin.query(`CREATE DATABASE "${temporary.name}"`);
   runPostgresTool('pg_restore', [
-    `--dbname=${temporary.url}`,
+    `--dbname=${postgresToolDatabaseUrl(temporary.url)}`,
     '--no-owner',
     '--no-privileges',
     '--exit-on-error',

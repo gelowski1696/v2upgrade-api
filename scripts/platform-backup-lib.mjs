@@ -99,6 +99,20 @@ export function runPostgresTool(name, args) {
   }
 }
 
+export function postgresToolDatabaseUrl(connectionString) {
+  const url = new URL(connectionString);
+  for (const parameter of [
+    'schema',
+    'connection_limit',
+    'pool_timeout',
+    'pgbouncer',
+    'socket_timeout',
+  ]) {
+    url.searchParams.delete(parameter);
+  }
+  return url.toString();
+}
+
 export async function sha256(path) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(path)) hash.update(chunk);
