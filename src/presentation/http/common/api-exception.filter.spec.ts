@@ -15,7 +15,15 @@ describe('ApiExceptionFilter', () => {
     const host = {
       switchToHttp: () => ({
         getResponse: () => response,
-        getRequest: () => ({ url: '/api/v1/device-sync/uploads' }),
+        getRequest: () => ({
+          method: 'POST',
+          path: '/api/v1/device-sync/uploads',
+          url: '/api/v1/device-sync/uploads?secret=hidden',
+          get: (name: string) =>
+            name.toLowerCase() === 'x-request-id'
+              ? 'test-request-1'
+              : undefined,
+        }),
       }),
     } as unknown as ArgumentsHost;
 
@@ -41,6 +49,7 @@ describe('ApiExceptionFilter', () => {
         code: 'SCHEMA_INCOMPATIBLE',
         message: 'The uploaded database schema is not supported.',
         path: '/api/v1/device-sync/uploads',
+        requestId: 'test-request-1',
       }),
     );
   });

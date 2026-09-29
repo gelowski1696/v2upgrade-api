@@ -487,6 +487,9 @@ export class DeviceSyncService implements OnModuleInit {
         completedAt: new Date(),
       },
     });
+    this.logger.warn(
+      JSON.stringify({ event: 'sync.session_rejected', sessionId: id, code }),
+    );
   }
 
   private async cleanupExpiredUploads(): Promise<void> {

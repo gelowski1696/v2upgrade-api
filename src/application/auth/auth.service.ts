@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'node:crypto';
@@ -24,6 +29,8 @@ export interface AuthResult {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(USER_REPOSITORY) private readonly users: UserRepository,
     @Inject(PASSWORD_HASHER) private readonly hasher: PasswordHasher,
@@ -38,6 +45,12 @@ export class AuthService {
       user.status !== 'ACTIVE' ||
       !(await this.hasher.verify(user.passwordHash, password))
     ) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'admin.login_failed',
+          reason: 'INVALID_CREDENTIALS',
+        }),
+      );
       throw new UnauthorizedException('Invalid username or password.');
     }
 
@@ -48,6 +61,7 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<AuthResult> {
     const [sessionId, secret] = refreshToken.split('.', 2);
     if (!sessionId || !secret) {
+      this.logRefreshFailure('MALFORMED_TOKEN');
       throw new UnauthorizedException('Invalid refresh token.');
     }
 
@@ -58,11 +72,13 @@ export class AuthService {
       session.expiresAt <= new Date() ||
       !(await this.hasher.verify(session.tokenHash, secret))
     ) {
+      this.logRefreshFailure('INVALID_OR_EXPIRED');
       throw new UnauthorizedException('Refresh token is invalid or expired.');
     }
 
     const user = await this.users.findById(session.userId);
     if (!user || user.status !== 'ACTIVE') {
+      this.logRefreshFailure('ACCOUNT_UNAVAILABLE');
       throw new UnauthorizedException('Account is unavailable.');
     }
 
@@ -100,6 +116,10 @@ export class AuthService {
       refreshToken: `${session.id}.${secret}`,
       user: this.toAuthenticatedUser(user),
     };
+  }
+
+  private logRefreshFailure(reason: string): void {
+    this.logger.warn(JSON.stringify({ event: 'admin.refresh_failed', reason }));
   }
 
   private toAuthenticatedUser(user: UserAccount): AuthenticatedUser {

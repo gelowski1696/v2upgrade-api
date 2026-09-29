@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { ApiExceptionFilter } from './presentation/http/common/api-exception.filter.js';
+import { requestContextMiddleware } from './presentation/http/common/request-context.middleware.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -12,6 +13,7 @@ async function bootstrap() {
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
   }
 
+  app.use(requestContextMiddleware);
   app.use(helmet());
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
@@ -28,7 +30,11 @@ async function bootstrap() {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
-  app.enableCors({ origin: origins, credentials: true });
+  app.enableCors({
+    origin: origins,
+    credentials: true,
+    exposedHeaders: ['X-Request-ID'],
+  });
 
   const swaggerEnabled =
     process.env.NODE_ENV !== 'production' ||

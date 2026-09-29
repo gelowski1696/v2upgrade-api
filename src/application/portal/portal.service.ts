@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -24,6 +25,8 @@ export interface PortalRequestContext {
 
 @Injectable()
 export class PortalService {
+  private readonly logger = new Logger(PortalService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly hasher: Argon2PasswordHasher,
@@ -274,6 +277,12 @@ export class PortalService {
       user.status !== 'ACTIVE' ||
       !(await this.hasher.verify(user.passwordHash, password))
     ) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'portal.login_failed',
+          reason: 'INVALID_CREDENTIALS',
+        }),
+      );
       throw new UnauthorizedException('Invalid username or password.');
     }
     await this.prisma.portalUser.update({
@@ -723,6 +732,13 @@ export class PortalService {
     reason: string,
     context: PortalRequestContext,
   ): Promise<void> {
+    this.logger.warn(
+      JSON.stringify({
+        event: 'portal.refresh_failed',
+        portalUserId: session.portalUserId,
+        reason,
+      }),
+    );
     await this.prisma.auditLog.create({
       data: {
         action: 'portal.refresh_failed',
@@ -747,7 +763,7 @@ export class PortalService {
     context: PortalRequestContext,
   ): Promise<void> {
     const now = new Date();
-    await this.prisma.$transaction(async (transaction) => {
+    const revokedCount = await this.prisma.$transaction(async (transaction) => {
       const revoked = await transaction.portalRefreshSession.updateMany({
         where: { tokenFamilyId: session.tokenFamilyId, revokedAt: null },
         data: { revokedAt: now, revokedReason: 'REPLAY_DETECTED' },
@@ -765,7 +781,15 @@ export class PortalService {
           },
         },
       });
+      return revoked.count;
     });
+    this.logger.warn(
+      JSON.stringify({
+        event: 'portal.refresh_replay_detected',
+        portalUserId: session.portalUserId,
+        revokedSessionCount: revokedCount,
+      }),
+    );
   }
 
   private isRecentRotation(session: {

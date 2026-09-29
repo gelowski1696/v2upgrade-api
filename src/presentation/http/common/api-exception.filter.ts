@@ -4,22 +4,29 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { DomainError } from '../../../domain/shared/errors.js';
+import { requestIdFrom } from './request-context.middleware.js';
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(ApiExceptionFilter.name);
+
   catch(error: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
     const request = host.switchToHttp().getRequest<Request>();
+    const requestId = requestIdFrom(request);
+    const path = request.path ?? request.url.split('?', 1)[0];
 
     if (error instanceof DomainError) {
       response.status(error.status).json({
         statusCode: error.status,
         code: error.code,
         message: error.message,
-        path: request.url,
+        path,
+        requestId,
         timestamp: new Date().toISOString(),
       });
       return;
@@ -47,18 +54,28 @@ export class ApiExceptionFilter implements ExceptionFilter {
               ? 'UNAUTHORIZED'
               : 'REQUEST_ERROR',
         message,
-        path: request.url,
+        path,
+        requestId,
         timestamp: new Date().toISOString(),
       });
       return;
     }
 
-    console.error(error);
+    this.logger.error(
+      JSON.stringify({
+        event: 'http.unhandled_exception',
+        requestId,
+        method: request.method,
+        path,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      }),
+    );
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_ERROR',
       message: 'An unexpected error occurred.',
-      path: request.url,
+      path,
+      requestId,
       timestamp: new Date().toISOString(),
     });
   }
