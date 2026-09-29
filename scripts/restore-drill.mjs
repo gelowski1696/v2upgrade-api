@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import {
   backupRoot,
   databaseUrl,
+  isPathInside,
   pool,
   readDashboardFingerprint,
   recordBackupOperation,
@@ -56,7 +57,7 @@ try {
   }
   for (const snapshot of manifest.snapshots) {
     const path = resolve(backup, snapshot.relativePath);
-    if (!path.startsWith(`${resolve(backup)}\\`)) {
+    if (!isPathInside(path, backup)) {
       throw new Error('Invalid snapshot path in manifest.');
     }
     const hash = await sha256(path);

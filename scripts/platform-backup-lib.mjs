@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import pg from 'pg';
@@ -279,15 +279,22 @@ export async function enforceRetention() {
 export async function safeRemove(target, parent) {
   const resolvedTarget = resolve(target);
   const resolvedParent = resolve(parent);
-  if (
-    resolvedTarget === resolvedParent ||
-    !resolvedTarget.startsWith(`${resolvedParent}\\`)
-  ) {
+  if (!isPathInside(resolvedTarget, resolvedParent)) {
     throw new Error(
       `Refusing to remove path outside backup root: ${resolvedTarget}`,
     );
   }
   await fs.rm(resolvedTarget, { recursive: true, force: true, maxRetries: 3 });
+}
+
+export function isPathInside(target, parent) {
+  const relation = relative(resolve(parent), resolve(target));
+  return (
+    relation !== '' &&
+    relation !== '..' &&
+    !relation.startsWith(`..${sep}`) &&
+    !isAbsolute(relation)
+  );
 }
 
 export function temporaryDatabaseUrl() {

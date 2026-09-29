@@ -31,6 +31,7 @@
     "test:sync:soak": "node scripts/test-sync-soak.mjs",
     "backup:platform": "node scripts/backup-owner-platform.mjs",
     "backup:restore-drill": "node scripts/restore-drill.mjs",
+    "test:backup-paths": "node --test scripts/platform-backup-lib.test.mjs",
     "backup:schedule:windows": "powershell -ExecutionPolicy Bypass -File scripts/register-windows-backup-task.ps1",
     "dev:rebind-pos-device": "node scripts/rebind-development-device.mjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
