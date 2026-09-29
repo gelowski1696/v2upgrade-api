@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.js';
+import { webDashboardEnabled } from '../../domain/subscriptions/feature-mods.js';
 import { PrismaService } from '../database/prisma.service.js';
 
 interface DeviceTokenPayload extends AuthenticatedDevice {
@@ -42,7 +43,8 @@ export class DeviceJwtStrategy extends PassportStrategy(
       device.client.status !== 'ACTIVE' ||
       device.store.status !== 'ACTIVE' ||
       !device.subscription ||
-      !['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status)
+      !['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status) ||
+      !webDashboardEnabled(device.subscription.entitlements)
     ) {
       throw new UnauthorizedException('Device access is unavailable.');
     }

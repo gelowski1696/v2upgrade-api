@@ -21,6 +21,8 @@ import {
   RenewSubscriptionDto,
   SubscriptionActionDto,
   SubscriptionPageQueryDto,
+  UpdateFeatureModsDto,
+  UpdateWebDashboardDto,
   ValidateDeviceDto,
 } from './subscriptions.dto.js';
 
@@ -63,6 +65,26 @@ export class SubscriptionsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.subscriptions.assignDevice(id, input.deviceId, user.id);
+  }
+
+  @Patch(':id/feature-mods')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateFeatureMods(
+    @Param('id') id: string,
+    @Body() input: UpdateFeatureModsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.updateFeatureMods(id, input.features, user.id);
+  }
+
+  @Patch(':id/web-dashboard')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateWebDashboard(
+    @Param('id') id: string,
+    @Body() input: UpdateWebDashboardDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.updateWebDashboard(id, input.enabled, user.id);
   }
 
   @Post(':id/activate')

@@ -25,6 +25,11 @@ import {
   type SubscriptionRepository,
   type SubscriptionStatus,
 } from '../../domain/subscriptions/subscription.repository.js';
+import {
+  featureModsFromEntitlements,
+  validateFeatureMods,
+  webDashboardEnabled,
+} from '../../domain/subscriptions/feature-mods.js';
 
 const allowedTransitions: Record<SubscriptionStatus, SubscriptionStatus[]> = {
   DRAFT: ['TRIAL', 'ACTIVE', 'CANCELLED'],
@@ -216,6 +221,52 @@ export class SubscriptionsService {
     return this.subscriptions.events(id);
   }
 
+  async updateFeatureMods(
+    id: string,
+    input: Record<string, unknown>,
+    actorId: string,
+  ) {
+    const current = await this.get(id);
+    let featureMods;
+    try {
+      featureMods = validateFeatureMods(input);
+    } catch (error) {
+      throw new InvalidOperationError(
+        error instanceof Error ? error.message : 'Feature mods are invalid.',
+        'INVALID_FEATURE_MODS',
+      );
+    }
+    const updated = await this.subscriptions.updateEntitlements(id, {
+      ...current.entitlements,
+      ...featureMods,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'subscription.feature_mods_updated',
+      resourceType: 'subscription',
+      resourceId: id,
+      metadata: { featureMods },
+    });
+    return updated;
+  }
+
+  async updateWebDashboard(id: string, enabled: boolean, actorId: string) {
+    const current = await this.get(id);
+    const updated = await this.subscriptions.updateEntitlements(id, {
+      ...current.entitlements,
+      webDashboard: enabled,
+    });
+    await this.audit.record({
+      actorId,
+      action: enabled
+        ? 'subscription.web_dashboard_enabled'
+        : 'subscription.web_dashboard_disabled',
+      resourceType: 'subscription',
+      resourceId: id,
+    });
+    return updated;
+  }
+
   async validateDevice(deviceId: string) {
     const checkedAt = new Date();
     const device = await this.subscriptions.findByDeviceId(
@@ -290,6 +341,8 @@ export class SubscriptionsService {
       checkedAt,
       deviceAccessToken,
       storeId: device.storeId,
+      featureMods: featureModsFromEntitlements(subscription.entitlements),
+      webDashboardEnabled: webDashboardEnabled(subscription.entitlements),
       subscription: {
         id: subscription.id,
         status: subscription.status,

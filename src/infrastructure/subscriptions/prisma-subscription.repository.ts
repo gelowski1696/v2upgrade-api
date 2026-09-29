@@ -209,6 +209,18 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     }
   }
 
+  async updateEntitlements(
+    id: string,
+    entitlements: Record<string, unknown>,
+  ): Promise<SubscriptionRecord> {
+    const subscription = await this.prisma.subscription.update({
+      where: { id },
+      data: { entitlements: entitlements as Prisma.InputJsonValue },
+      include: subscriptionInclude,
+    });
+    return this.map(subscription);
+  }
+
   async transition(
     id: string,
     fromStatus: SubscriptionStatus,

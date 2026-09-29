@@ -30,17 +30,22 @@ async function bootstrap() {
     .filter(Boolean);
   app.enableCors({ origin: origins, credentials: true });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('POSV2 Subscription API')
-    .setDescription('Client, plan, subscription, and POS licensing service')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup(
-    'docs',
-    app,
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
+  const swaggerEnabled =
+    process.env.NODE_ENV !== 'production' ||
+    process.env.SWAGGER_ENABLED === 'true';
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('POSV2 Subscription API')
+      .setDescription('Client, plan, subscription, and POS licensing service')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup(
+      'docs',
+      app,
+      SwaggerModule.createDocument(app, swaggerConfig),
+    );
+  }
 
   const port = Number(process.env.PORT ?? 3100);
   await app.listen(port);

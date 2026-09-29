@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'node:crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.js';
+import { webDashboardEnabled } from '../../domain/subscriptions/feature-mods.js';
 import type {
   AuthenticatedPortalUser,
   PortalRole,
@@ -194,6 +195,11 @@ export class PortalService {
       invitation.expiresAt <= new Date()
     ) {
       throw new UnauthorizedException('Activation link is invalid or expired.');
+    }
+    if (
+      !(await this.enabledWebDashboardStoreIds([invitation.storeId])).length
+    ) {
+      throw new UnauthorizedException('Web dashboard access is not enabled.');
     }
     const passwordHash = await this.hasher.hash(password);
     const user = await this.prisma.$transaction(async (transaction) => {
@@ -577,6 +583,10 @@ export class PortalService {
     user: AuthenticatedPortalUser,
     context: PortalRequestContext,
   ) {
+    const storeIds = await this.enabledWebDashboardStoreIds(user.storeIds);
+    if (!storeIds.length) {
+      throw new UnauthorizedException('Web dashboard access is not enabled.');
+    }
     const secret = randomBytes(48).toString('base64url');
     const days = this.config.get<number>('PORTAL_REFRESH_TOKEN_TTL_DAYS', 30);
     const refresh = await this.prisma.portalRefreshSession.create({
@@ -588,7 +598,7 @@ export class PortalService {
         expiresAt: new Date(Date.now() + days * 86_400_000),
       },
     });
-    const authenticatedUser = { ...user, sessionId: refresh.id };
+    const authenticatedUser = { ...user, storeIds, sessionId: refresh.id };
     const accessToken = await this.jwt.signAsync(
       {
         sub: user.id,
@@ -611,6 +621,29 @@ export class PortalService {
       refreshToken: `${refresh.id}.${secret}`,
       user: authenticatedUser,
     };
+  }
+
+  private async enabledWebDashboardStoreIds(
+    storeIds: string[],
+  ): Promise<string[]> {
+    if (!storeIds.length) return [];
+    const devices = await this.prisma.device.findMany({
+      where: { storeId: { in: storeIds }, status: 'ACTIVE' },
+      select: {
+        storeId: true,
+        subscription: { select: { entitlements: true } },
+      },
+    });
+    const disabledStores = new Set(
+      devices
+        .filter(
+          (device) =>
+            device.subscription &&
+            !webDashboardEnabled(device.subscription.entitlements),
+        )
+        .map((device) => device.storeId),
+    );
+    return storeIds.filter((storeId) => !disabledStores.has(storeId));
   }
 
   private describeUserAgent(userAgent: string | null): string {

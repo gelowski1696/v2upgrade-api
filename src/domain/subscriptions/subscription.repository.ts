@@ -98,6 +98,10 @@ export interface SubscriptionRepository {
     deviceInstallationId: string,
   ): Promise<SubscriptionRecord>;
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord>;
+  updateEntitlements(
+    id: string,
+    entitlements: Record<string, unknown>,
+  ): Promise<SubscriptionRecord>;
   transition(
     id: string,
     fromStatus: SubscriptionStatus,

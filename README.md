@@ -74,7 +74,7 @@ npm run start:dev
 ```
 
 - API: `http://localhost:3100/api/v1`
-- Swagger: `http://localhost:3100/docs`
+- Swagger: `http://localhost:3100/docs` in development; disabled by default in production
 - Health: `http://localhost:3100/api/v1/health`
 
 The API stores uploaded database snapshots below `STORE_SNAPSHOT_ROOT`. In production, place this directory on persistent storage available only to the API service account. Back up this directory together with PostgreSQL metadata.
@@ -106,6 +106,9 @@ GET    /api/v1/subscriptions
 POST   /api/v1/subscriptions
 GET    /api/v1/subscriptions/:id
 GET    /api/v1/subscriptions/:id/events
+PATCH  /api/v1/subscriptions/:id/device
+PATCH  /api/v1/subscriptions/:id/feature-mods
+PATCH  /api/v1/subscriptions/:id/web-dashboard
 POST   /api/v1/subscriptions/:id/activate
 POST   /api/v1/subscriptions/:id/suspend
 POST   /api/v1/subscriptions/:id/reactivate

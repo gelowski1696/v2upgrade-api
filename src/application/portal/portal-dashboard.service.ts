@@ -818,33 +818,45 @@ export class PortalDashboardService {
   reportCapabilities(user: AuthenticatedPortalUser, storeId: string) {
     this.authorize(user, storeId);
     return this.withFreshness(storeId, async (db) => {
-      if (!(await this.tableExists(db, 'owner_feature_mods'))) {
+      const subscriptionFeatures = await this.subscriptionFeatureMods(storeId);
+      const hasSnapshotFeatures = await this.tableExists(
+        db,
+        'owner_feature_mods',
+      );
+      if (
+        !hasSnapshotFeatures &&
+        Object.keys(subscriptionFeatures).length === 0
+      ) {
         return {
           available: false,
           reports: [],
         };
       }
-      const rows = await db.$queryRawUnsafe<FeatureModRow[]>(
-        `SELECT feature_key AS key,
+      const rows = hasSnapshotFeatures
+        ? await db.$queryRawUnsafe<FeatureModRow[]>(
+            `SELECT feature_key AS key,
                 CAST(enabled AS INTEGER) AS enabled
            FROM owner_feature_mods
           WHERE feature_key IN ('summaryCsv', 'financialReport', 'discountReport', 'purchases', 'specialReceipts', 'customerReport')
           ORDER BY feature_key`,
+          )
+        : [];
+      const snapshotFeatures = Object.fromEntries(
+        rows.map((row) => [row.key, Number(row.enabled) === 1]),
       );
-      const reports = rows
-        .filter((row) => Number(row.enabled) === 1)
-        .map(
-          (row) =>
-            ({
-              summaryCsv: 'inventory-summary',
-              financialReport: 'financial-report',
-              discountReport: 'discount-report',
-              purchases: 'purchase-report',
-              specialReceipts: 'special-receipts',
-              customerReport: 'customer-report',
-            })[row.key],
+      const reports = Object.entries({
+        customerReport: 'customer-report',
+        discountReport: 'discount-report',
+        financialReport: 'financial-report',
+        purchases: 'purchase-report',
+        specialReceipts: 'special-receipts',
+        summaryCsv: 'inventory-summary',
+      })
+        .filter(
+          ([key]) =>
+            subscriptionFeatures[key] ?? snapshotFeatures[key] ?? false,
         )
-        .filter((report): report is string => Boolean(report))
+        .map(([, report]) => report)
         .filter(
           (report) => report !== 'financial-report' || user.role === 'OWNER',
         );
@@ -863,7 +875,12 @@ export class PortalDashboardService {
     this.authorize(user, storeId);
     const dates = this.requiredDateRange(input);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'discountReport', 'Discount Report');
+      await this.requireFeatureMod(
+        db,
+        storeId,
+        'discountReport',
+        'Discount Report',
+      );
       const sourceSql = `FROM salestbl
           WHERE salesdate >= ? AND salesdate < datetime(?, '+1 day')
             AND UPPER(COALESCE(salestatus, '')) <> 'CANCELLED'
@@ -918,7 +935,7 @@ export class PortalDashboardService {
     this.authorize(user, storeId);
     const dates = this.requiredDateRange(input);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'purchases', 'Purchase Report');
+      await this.requireFeatureMod(db, storeId, 'purchases', 'Purchase Report');
       const sourceSql = `FROM pouttbl transfer
            LEFT JOIN personeltbl personnel
              ON CAST(personnel.pid AS INTEGER) = CAST(COALESCE(transfer.poutpid, 0) AS INTEGER)
@@ -977,7 +994,12 @@ export class PortalDashboardService {
     this.authorize(user, storeId);
     const dates = this.requiredDateRange(range);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'specialReceipts', 'Special Receipts');
+      await this.requireFeatureMod(
+        db,
+        storeId,
+        'specialReceipts',
+        'Special Receipts',
+      );
       const rows = await db.$queryRawUnsafe<SpecialReceiptModuleRow[]>(
         `SELECT CAST(salesid AS INTEGER) AS salesId,
                 COALESCE(salesdate, '') AS salesDate,
@@ -1020,7 +1042,12 @@ export class PortalDashboardService {
     this.authorize(user, storeId);
     const dates = this.requiredDateRange(range);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'customerReport', 'Customer Report');
+      await this.requireFeatureMod(
+        db,
+        storeId,
+        'customerReport',
+        'Customer Report',
+      );
       const rows = await db.$queryRawUnsafe<CustomerModuleRow[]>(
         `SELECT CAST(sales.salesid AS INTEGER) AS salesId,
                 COALESCE(sales.salesdate, '') AS salesDate,
@@ -1064,7 +1091,7 @@ export class PortalDashboardService {
     this.authorize(user, storeId);
     const dates = this.requiredDateRange(range);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'summaryCsv', 'Summary CSV');
+      await this.requireFeatureMod(db, storeId, 'summaryCsv', 'Summary CSV');
       const [openingRows, actualRows] = await Promise.all([
         db.$queryRawUnsafe<Array<{ snapshotDate: string }>>(
           "SELECT COALESCE(MAX(DATE(date)), '') AS snapshotDate FROM invetorycounttbl WHERE DATE(date) < DATE(?)",
@@ -1175,7 +1202,12 @@ export class PortalDashboardService {
     }
     const dates = this.requiredDateRange(range);
     return this.withFreshness(storeId, async (db) => {
-      await this.requireFeatureMod(db, 'financialReport', 'Financial Report');
+      await this.requireFeatureMod(
+        db,
+        storeId,
+        'financialReport',
+        'Financial Report',
+      );
       const [openingRows, actualRows, rows, cashFlow] = await Promise.all([
         db.$queryRawUnsafe<Array<{ snapshotDate: string }>>(
           "SELECT COALESCE(MAX(DATE(date)), '') AS snapshotDate FROM invetorycounttbl WHERE DATE(date) < DATE(?)",
@@ -5119,9 +5151,15 @@ export class PortalDashboardService {
 
   private async requireFeatureMod(
     db: StorePrismaClient,
+    storeId: string,
     key: string,
     label: string,
   ): Promise<void> {
+    const subscriptionFeatures = await this.subscriptionFeatureMods(storeId);
+    if (subscriptionFeatures[key] === true) return;
+    if (subscriptionFeatures[key] === false) {
+      throw new NotFoundException(`${label} is not enabled for this store.`);
+    }
     if (!(await this.tableExists(db, 'owner_feature_mods'))) {
       throw new NotFoundException(
         `${label} is not available in this synchronized snapshot.`,
@@ -5134,6 +5172,44 @@ export class PortalDashboardService {
     if (Number(rows[0]?.enabled ?? 0) !== 1) {
       throw new NotFoundException(`${label} is not enabled for this store.`);
     }
+  }
+
+  private async subscriptionFeatureMods(
+    storeId: string,
+  ): Promise<Record<string, boolean>> {
+    type DeviceLookup = {
+      findFirst(input: unknown): Promise<{
+        subscription: { entitlements: unknown } | null;
+      } | null>;
+    };
+    const deviceRepository = (
+      this.prisma as unknown as { device?: DeviceLookup }
+    ).device;
+    if (!deviceRepository) return {};
+    const device = await deviceRepository.findFirst({
+      where: {
+        storeId,
+        status: 'ACTIVE',
+        subscription: {
+          is: { status: { in: ['ACTIVE', 'TRIAL', 'GRACE'] } },
+        },
+      },
+      select: { subscription: { select: { entitlements: true } } },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const entitlements = device?.subscription?.entitlements;
+    if (
+      !entitlements ||
+      typeof entitlements !== 'object' ||
+      Array.isArray(entitlements)
+    ) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(entitlements).filter(
+        (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
+      ),
+    );
   }
 
   private inventoryStockStatus(item: {

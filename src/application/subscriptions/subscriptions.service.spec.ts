@@ -36,6 +36,7 @@ describe('SubscriptionsService', () => {
     touchDevice: jest.fn(),
     assignDevice: jest.fn(),
     create: jest.fn(),
+    updateEntitlements: jest.fn(),
     transition: jest.fn(),
     renew: jest.fn(),
     events: jest.fn(),
@@ -209,7 +210,11 @@ describe('SubscriptionsService', () => {
       currency: 'PHP',
       billingInterval: 'MONTHLY',
       maxDevices: 1,
-      entitlements: {},
+      entitlements: {
+        reports: true,
+        summaryCsv: true,
+        discountReport: false,
+      },
       notes: null,
       createdById: 'actor-id',
       createdAt: new Date(),
@@ -231,11 +236,114 @@ describe('SubscriptionsService', () => {
     });
 
     await expect(service.validateDevice('pos-device-0001')).resolves.toEqual(
-      expect.objectContaining({ valid: true, code: 'VALID' }),
+      expect.objectContaining({
+        valid: true,
+        code: 'VALID',
+        featureMods: { summaryCsv: true, discountReport: false },
+        webDashboardEnabled: true,
+      }),
     );
     expect(subscriptions.touchDevice.mock.calls[0]).toEqual([
       'device-row-id',
       expect.any(Date),
     ]);
+  });
+
+  it('updates feature mods without discarding other entitlements', async () => {
+    const current = {
+      id: 'subscription-id',
+      clientId: 'client-id',
+      planVersionId: 'version-id',
+      status: 'ACTIVE',
+      startsAt: new Date(),
+      renewsAt: null,
+      expiresAt: null,
+      graceEndsAt: null,
+      suspendedAt: null,
+      cancelledAt: null,
+      amount: '1499.00',
+      currency: 'PHP',
+      billingInterval: 'MONTHLY',
+      maxDevices: 1,
+      entitlements: { reports: true, summaryCsv: false },
+      notes: null,
+      createdById: 'actor-id',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      client: { id: 'client-id', code: 'CLIENT-1', businessName: 'Client One' },
+      planVersion: {
+        id: 'version-id',
+        version: 1,
+        plan: { id: 'plan-id', code: 'STANDARD', name: 'Standard' },
+      },
+      device: null,
+    } satisfies SubscriptionRecord;
+    subscriptions.findById.mockResolvedValue(current);
+    subscriptions.updateEntitlements.mockResolvedValue({
+      ...current,
+      entitlements: { reports: true, summaryCsv: true },
+    });
+
+    await service.updateFeatureMods(
+      'subscription-id',
+      { summaryCsv: true },
+      'admin-id',
+    );
+
+    expect(subscriptions.updateEntitlements.mock.calls[0]).toEqual([
+      'subscription-id',
+      { reports: true, summaryCsv: true },
+    ]);
+    expect(audit.record.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ action: 'subscription.feature_mods_updated' }),
+    );
+  });
+
+  it('updates web dashboard access without discarding feature mods', async () => {
+    const current = {
+      id: 'subscription-id',
+      clientId: 'client-id',
+      planVersionId: 'version-id',
+      status: 'ACTIVE',
+      startsAt: new Date(),
+      renewsAt: null,
+      expiresAt: null,
+      graceEndsAt: null,
+      suspendedAt: null,
+      cancelledAt: null,
+      amount: '1499.00',
+      currency: 'PHP',
+      billingInterval: 'MONTHLY',
+      maxDevices: 1,
+      entitlements: { summaryCsv: true },
+      notes: null,
+      createdById: 'actor-id',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      client: { id: 'client-id', code: 'CLIENT-1', businessName: 'Client One' },
+      planVersion: {
+        id: 'version-id',
+        version: 1,
+        plan: { id: 'plan-id', code: 'STANDARD', name: 'Standard' },
+      },
+      device: null,
+    } satisfies SubscriptionRecord;
+    subscriptions.findById.mockResolvedValue(current);
+    subscriptions.updateEntitlements.mockResolvedValue({
+      ...current,
+      entitlements: { summaryCsv: true, webDashboard: false },
+    });
+
+    await service.updateWebDashboard('subscription-id', false, 'admin-id');
+
+    expect(subscriptions.updateEntitlements.mock.calls[0]).toEqual([
+      'subscription-id',
+      { summaryCsv: true, webDashboard: false },
+    ]);
+    expect(audit.record.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        action: 'subscription.web_dashboard_disabled',
+      }),
+    );
   });
 });

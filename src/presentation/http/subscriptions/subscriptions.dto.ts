@@ -4,6 +4,8 @@ import {
   IsISO8601,
   IsOptional,
   IsNotEmpty,
+  IsObject,
+  IsBoolean,
   Matches,
   IsString,
   IsUUID,
@@ -76,6 +78,18 @@ export class ValidateDeviceDto {
   @MaxLength(120)
   @Matches(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,119}$/)
   deviceId!: string;
+}
+
+export class UpdateFeatureModsDto {
+  @ApiProperty({ type: Object })
+  @IsObject()
+  features!: Record<string, unknown>;
+}
+
+export class UpdateWebDashboardDto {
+  @ApiProperty()
+  @IsBoolean()
+  enabled!: boolean;
 }
 
 export class SubscriptionActionDto {

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { AuthenticatedPortalUser } from '../../domain/portal/portal-auth.types.js';
+import { webDashboardEnabled } from '../../domain/subscriptions/feature-mods.js';
 import { PrismaService } from '../database/prisma.service.js';
 
 interface PortalTokenPayload {
@@ -66,6 +67,29 @@ export class PortalJwtStrategy extends PassportStrategy(
     ) {
       throw new UnauthorizedException('Portal account is unavailable.');
     }
+    const storeIds = session.user.storeAccess.map((access) => access.storeId);
+    const devices = await this.prisma.device.findMany({
+      where: { storeId: { in: storeIds }, status: 'ACTIVE' },
+      select: {
+        storeId: true,
+        subscription: { select: { entitlements: true } },
+      },
+    });
+    const disabledStores = new Set(
+      devices
+        .filter(
+          (device) =>
+            device.subscription &&
+            !webDashboardEnabled(device.subscription.entitlements),
+        )
+        .map((device) => device.storeId),
+    );
+    const enabledStoreIds = storeIds.filter(
+      (storeId) => !disabledStores.has(storeId),
+    );
+    if (!enabledStoreIds.length) {
+      throw new UnauthorizedException('Web dashboard access is not enabled.');
+    }
     if (session.lastUsedAt < new Date(Date.now() - 5 * 60_000)) {
       await this.prisma.portalRefreshSession.update({
         where: { id: session.id },
@@ -79,7 +103,7 @@ export class PortalJwtStrategy extends PassportStrategy(
       username: session.user.username,
       displayName: session.user.displayName,
       role: session.user.role,
-      storeIds: session.user.storeAccess.map((access) => access.storeId),
+      storeIds: enabledStoreIds,
     };
   }
 }

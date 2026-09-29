@@ -28,6 +28,7 @@ describe('PortalDashboardService report parity', () => {
   const auditCreate = jest.fn().mockResolvedValue({});
   const auditFindMany = jest.fn().mockResolvedValue([]);
   const auditCount = jest.fn().mockResolvedValue(0);
+  const deviceFindFirst = jest.fn().mockResolvedValue(null);
 
   const user: AuthenticatedPortalUser = {
     id: 'portal-user',
@@ -101,6 +102,9 @@ describe('PortalDashboardService report parity', () => {
         create: auditCreate,
         findMany: auditFindMany,
         count: auditCount,
+      },
+      device: {
+        findFirst: deviceFindFirst,
       },
     } as unknown as PrismaService;
     const config = {
@@ -779,6 +783,19 @@ describe('PortalDashboardService report parity', () => {
     expect(() =>
       service.reportCapabilities({ ...user, storeIds: [] }, storeId),
     ).toThrow('You do not have access to this store.');
+  });
+
+  it('prefers subscription feature mods over legacy snapshot switches', async () => {
+    deviceFindFirst.mockResolvedValueOnce({
+      subscription: {
+        entitlements: { summaryCsv: false, discountReport: true },
+      },
+    });
+
+    const capabilities = await service.reportCapabilities(user, storeId);
+
+    expect(capabilities.data.reports).not.toContain('inventory-summary');
+    expect(capabilities.data.reports).toContain('discount-report');
   });
 
   it('returns enabled Summary CSV and Financial Report data with desktop parity', async () => {
