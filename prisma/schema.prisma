@@ -115,6 +115,35 @@ enum UploadSessionStatus {
   EXPIRED
 }
 
+enum WebAnalyticsEventType {
+  PAGE_VIEW
+  FEATURE_USED
+  FRONTEND_ERROR
+  API_FAILURE
+  WEB_VITAL
+}
+
+enum WebAnalyticsDeviceClass {
+  DESKTOP
+  MOBILE
+  TABLET
+  UNKNOWN
+}
+
+enum WebAnalyticsBrowserFamily {
+  CHROME
+  EDGE
+  FIREFOX
+  SAFARI
+  OTHER
+}
+
+enum WebVitalName {
+  LCP
+  INP
+  CLS
+}
+
 model User {
   id                   String              @id @default(uuid()) @db.Uuid
   username             String              @unique @db.VarChar(80)
@@ -148,22 +177,24 @@ model RefreshSession {
 }
 
 model Client {
-  id            String             @id @default(uuid()) @db.Uuid
-  code          String             @unique @db.VarChar(40)
-  businessName  String             @map("business_name") @db.VarChar(180)
-  ownerName     String?            @map("owner_name") @db.VarChar(160)
-  email         String?            @db.VarChar(180)
-  phone         String?            @db.VarChar(50)
-  address       String?
-  notes         String?
-  status        ClientStatus       @default(ACTIVE)
-  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
-  subscriptions Subscription[]
-  devices       Device[]
-  stores        Store[]
-  portalUsers   PortalUser[]
-  invitations   PortalInvitation[]
+  id                  String              @id @default(uuid()) @db.Uuid
+  code                String              @unique @db.VarChar(40)
+  businessName        String              @map("business_name") @db.VarChar(180)
+  ownerName           String?             @map("owner_name") @db.VarChar(160)
+  email               String?             @db.VarChar(180)
+  phone               String?             @db.VarChar(50)
+  address             String?
+  notes               String?
+  status              ClientStatus        @default(ACTIVE)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  subscriptions       Subscription[]
+  devices             Device[]
+  stores              Store[]
+  portalUsers         PortalUser[]
+  invitations         PortalInvitation[]
+  webAnalyticsEnabled Boolean             @default(true) @map("web_analytics_enabled")
+  webAnalyticsEvents  WebAnalyticsEvent[]
 
   @@index([businessName])
   @@index([status])
@@ -171,25 +202,26 @@ model Client {
 }
 
 model Store {
-  id               String                 @id @default(uuid()) @db.Uuid
-  clientId         String                 @map("client_id") @db.Uuid
-  code             String                 @db.VarChar(40)
-  name             String                 @db.VarChar(180)
-  status           StoreStatus            @default(ACTIVE)
-  timezone         String                 @default("Asia/Manila") @db.VarChar(80)
-  activeSnapshotId String?                @unique @map("active_snapshot_id") @db.Uuid
-  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
-  client           Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  devices          Device[]
-  portalAccess     PortalStoreAccess[]
-  invitations      PortalInvitation[]
-  snapshots        StoreSnapshot[]        @relation("StoreSnapshots")
-  activeSnapshot   StoreSnapshot?         @relation("ActiveStoreSnapshot", fields: [activeSnapshotId], references: [id], onDelete: SetNull)
-  uploadSessions   SyncUploadSession[]
-  reportSchedules  PortalReportSchedule[]
-  salesTargets     PortalSalesTarget[]
-  savedViews       PortalSavedView[]
+  id                 String                 @id @default(uuid()) @db.Uuid
+  clientId           String                 @map("client_id") @db.Uuid
+  code               String                 @db.VarChar(40)
+  name               String                 @db.VarChar(180)
+  status             StoreStatus            @default(ACTIVE)
+  timezone           String                 @default("Asia/Manila") @db.VarChar(80)
+  activeSnapshotId   String?                @unique @map("active_snapshot_id") @db.Uuid
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client             Client                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  devices            Device[]
+  portalAccess       PortalStoreAccess[]
+  invitations        PortalInvitation[]
+  snapshots          StoreSnapshot[]        @relation("StoreSnapshots")
+  activeSnapshot     StoreSnapshot?         @relation("ActiveStoreSnapshot", fields: [activeSnapshotId], references: [id], onDelete: SetNull)
+  uploadSessions     SyncUploadSession[]
+  reportSchedules    PortalReportSchedule[]
+  salesTargets       PortalSalesTarget[]
+  savedViews         PortalSavedView[]
+  webAnalyticsEvents WebAnalyticsEvent[]
 
   @@unique([clientId, code])
   @@index([clientId, status])
@@ -219,9 +251,43 @@ model PortalUser {
   salesTargets        PortalSalesTarget[]
   dashboardPreference PortalDashboardPreference?
   savedViews          PortalSavedView[]
+  webAnalyticsEvents  WebAnalyticsEvent[]
 
   @@index([clientId, status])
   @@map("portal_users")
+}
+
+model WebAnalyticsEvent {
+  id              String                    @id @default(uuid()) @db.Uuid
+  eventKey        String                    @map("event_key") @db.Uuid
+  eventType       WebAnalyticsEventType     @map("event_type")
+  clientId        String                    @map("client_id") @db.Uuid
+  storeId         String?                   @map("store_id") @db.Uuid
+  portalUserId    String                    @map("portal_user_id") @db.Uuid
+  portalSessionId String                    @map("portal_session_id") @db.Uuid
+  portalRole      PortalRole                @map("portal_role")
+  occurredAt      DateTime                  @map("occurred_at") @db.Timestamptz(3)
+  route           String                    @db.VarChar(120)
+  feature         String?                   @db.VarChar(60)
+  operation       String?                   @db.VarChar(60)
+  errorCode       String?                   @map("error_code") @db.VarChar(80)
+  httpStatus      Int?                      @map("http_status")
+  metricName      WebVitalName?             @map("metric_name")
+  metricValue     Float?                    @map("metric_value")
+  appRelease      String                    @map("app_release") @db.VarChar(64)
+  deviceClass     WebAnalyticsDeviceClass   @map("device_class")
+  browserFamily   WebAnalyticsBrowserFamily @map("browser_family")
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  client          Client                    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  store           Store?                    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  portalUser      PortalUser                @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@unique([portalUserId, eventKey])
+  @@index([clientId, occurredAt])
+  @@index([clientId, eventType, occurredAt])
+  @@index([storeId, occurredAt])
+  @@index([appRelease, occurredAt])
+  @@map("web_analytics_events")
 }
 
 model PortalAlertDismissal {

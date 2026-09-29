@@ -136,7 +136,8 @@ export async function readBackupMetadata(pool) {
         (SELECT COUNT(*)::int FROM stores) AS stores,
         (SELECT COUNT(*)::int FROM portal_users) AS portal_users,
         (SELECT COUNT(*)::int FROM devices) AS devices,
-        (SELECT COUNT(*)::int FROM store_snapshots) AS snapshots
+        (SELECT COUNT(*)::int FROM store_snapshots) AS snapshots,
+        (SELECT COUNT(*)::int FROM web_analytics_events) AS analytics_events
     `),
   ]);
   return { snapshots: snapshots.rows, counts: counts.rows[0] };

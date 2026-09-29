@@ -11,6 +11,7 @@ import { PlansModule } from './modules/plans.module.js';
 import { SubscriptionsModule } from './modules/subscriptions.module.js';
 import { DeviceSyncModule } from './modules/device-sync.module.js';
 import { PortalModule } from './modules/portal.module.js';
+import { AnalyticsModule } from './modules/analytics.module.js';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PortalModule } from './modules/portal.module.js';
     SubscriptionsModule,
     DeviceSyncModule,
     PortalModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

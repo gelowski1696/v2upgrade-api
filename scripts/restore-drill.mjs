@@ -43,18 +43,27 @@ try {
       (SELECT COUNT(*)::int FROM stores) AS stores,
       (SELECT COUNT(*)::int FROM portal_users) AS portal_users,
       (SELECT COUNT(*)::int FROM devices) AS devices,
-      (SELECT COUNT(*)::int FROM store_snapshots) AS snapshots
+      (SELECT COUNT(*)::int FROM store_snapshots) AS snapshots,
+      (SELECT COUNT(*)::int FROM web_analytics_events) AS analytics_events
   `);
-  if (JSON.stringify(counts.rows[0]) !== JSON.stringify(manifest.database.counts)) {
-    throw new Error(`Restored metadata counts differ: ${JSON.stringify(counts.rows[0])}`);
+  if (
+    JSON.stringify(counts.rows[0]) !== JSON.stringify(manifest.database.counts)
+  ) {
+    throw new Error(
+      `Restored metadata counts differ: ${JSON.stringify(counts.rows[0])}`,
+    );
   }
 
   const activeRows = await restored.query(
     `SELECT id, store_id FROM store_snapshots WHERE status = 'ACTIVE' ORDER BY id`,
   );
-  const activeManifest = manifest.snapshots.filter((snapshot) => snapshot.active);
+  const activeManifest = manifest.snapshots.filter(
+    (snapshot) => snapshot.active,
+  );
   if (activeRows.rowCount !== activeManifest.length) {
-    throw new Error('Restored active snapshot count differs from the backup manifest.');
+    throw new Error(
+      'Restored active snapshot count differs from the backup manifest.',
+    );
   }
   for (const snapshot of manifest.snapshots) {
     const path = resolve(backup, snapshot.relativePath);
@@ -89,7 +98,9 @@ try {
     ),
   );
 } catch (error) {
-  await recordBackupOperation('restoreDrill', 'FAIL', error).catch(() => undefined);
+  await recordBackupOperation('restoreDrill', 'FAIL', error).catch(
+    () => undefined,
+  );
   throw error;
 } finally {
   if (restored) await restored.end();

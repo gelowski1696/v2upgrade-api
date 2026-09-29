@@ -75,6 +75,19 @@ export function validateEnvironment(config: Environment): Environment {
     config.PORTAL_REFRESH_REUSE_GRACE_SECONDS,
     5,
   );
+  const webAnalyticsRetentionDays = numberValue(
+    config.WEB_ANALYTICS_RETENTION_DAYS,
+    90,
+  );
+  if (
+    !Number.isInteger(webAnalyticsRetentionDays) ||
+    webAnalyticsRetentionDays < 1 ||
+    webAnalyticsRetentionDays > 365
+  ) {
+    throw new Error(
+      'WEB_ANALYTICS_RETENTION_DAYS must be an integer from 1 to 365.',
+    );
+  }
   if (
     !Number.isInteger(portalRefreshReuseGraceSeconds) ||
     portalRefreshReuseGraceSeconds < 1 ||
@@ -99,6 +112,7 @@ export function validateEnvironment(config: Environment): Environment {
     ),
     PORTAL_PASSWORD_RESET_TTL_MINUTES: portalPasswordResetMinutes,
     PORTAL_REFRESH_REUSE_GRACE_SECONDS: portalRefreshReuseGraceSeconds,
+    WEB_ANALYTICS_RETENTION_DAYS: webAnalyticsRetentionDays,
     STORE_SNAPSHOT_ROOT: stringValue(config.STORE_SNAPSHOT_ROOT, './data'),
     STORE_SNAPSHOT_MAX_BYTES: numberValue(
       config.STORE_SNAPSHOT_MAX_BYTES,
