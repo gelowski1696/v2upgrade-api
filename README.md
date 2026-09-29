@@ -79,7 +79,14 @@ npm run start:dev
 
 The API stores uploaded database snapshots below `STORE_SNAPSHOT_ROOT`. In production, place this directory on persistent storage available only to the API service account. Back up this directory together with PostgreSQL metadata.
 
-The owner dashboard origin must be present in `CORS_ORIGINS`. HTTPS is required outside local development.
+The owner dashboard origin must be present exactly in `CORS_ORIGINS` and `PORTAL_WEB_ORIGINS`. The browser portal uses
+credentialed, host-only refresh cookies, so production must use HTTPS and must not use a wildcard
+CORS origin. Keep `PORTAL_WEB_ORIGINS` limited to the owner dashboard (currently
+`https://vmjamdocuai.cloud`); it is intentionally narrower than the general CORS list.
+Portal refresh credentials rotate atomically in token families. Reuse of a rotated credential
+revokes the remaining active family and records `portal.refresh_replay_detected` in the audit log.
+`PORTAL_REFRESH_REUSE_GRACE_SECONDS` provides a narrow retry window for legitimate concurrent tabs;
+it defaults to five seconds and may be configured only from 1 to 30 seconds.
 
 ## Implemented Endpoints
 
@@ -135,6 +142,10 @@ POST   /api/v1/portal/auth/activate
 POST   /api/v1/portal/auth/login
 POST   /api/v1/portal/auth/refresh
 POST   /api/v1/portal/auth/logout
+POST   /api/v1/portal/auth/web/activate
+POST   /api/v1/portal/auth/web/login
+POST   /api/v1/portal/auth/web/refresh
+POST   /api/v1/portal/auth/web/logout
 POST   /api/v1/portal/auth/reset-password
 POST   /api/v1/portal/auth/change-password
 GET    /api/v1/portal/auth/sessions

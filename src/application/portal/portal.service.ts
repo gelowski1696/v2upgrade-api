@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.js';
 import { webDashboardEnabled } from '../../domain/subscriptions/feature-mods.js';
@@ -166,7 +166,10 @@ export class PortalService {
         : [
             this.prisma.portalRefreshSession.updateMany({
               where: { portalUserId: userId, revokedAt: null },
-              data: { revokedAt: new Date() },
+              data: {
+                revokedAt: new Date(),
+                revokedReason: 'ACCOUNT_DISABLED',
+              },
             }),
           ]),
     ]);
@@ -312,30 +315,106 @@ export class PortalService {
       where: { id },
       include: { user: { include: { storeAccess: true } } },
     });
-    if (
-      !session ||
-      session.revokedAt ||
-      session.expiresAt <= new Date() ||
-      session.user.status !== 'ACTIVE' ||
-      !(await this.hasher.verify(session.tokenHash, secret))
-    ) {
+    if (!session) {
       throw new UnauthorizedException('Refresh token is invalid or expired.');
     }
-    await this.prisma.portalRefreshSession.update({
-      where: { id },
-      data: { revokedAt: new Date() },
+    const secretMatches = await this.hasher.verify(session.tokenHash, secret);
+    if (!secretMatches) {
+      await this.auditRefreshFailure(session, 'SECRET_MISMATCH', context);
+      throw new UnauthorizedException('Refresh token is invalid or expired.');
+    }
+    if (session.revokedAt) {
+      if (this.isRecentRotation(session)) {
+        await this.auditRefreshFailure(session, 'CONCURRENT_ROTATION', context);
+        throw this.concurrentRefreshException();
+      }
+      await this.revokeRefreshFamilyForReplay(session, context);
+      throw new UnauthorizedException('Refresh token is invalid or expired.');
+    }
+    if (session.expiresAt <= new Date()) {
+      await this.auditRefreshFailure(session, 'EXPIRED', context);
+      throw new UnauthorizedException('Refresh token is invalid or expired.');
+    }
+    if (session.user.status !== 'ACTIVE') {
+      await this.auditRefreshFailure(session, 'USER_INACTIVE', context);
+      throw new UnauthorizedException('Refresh token is invalid or expired.');
+    }
+
+    const portalUser: AuthenticatedPortalUser = {
+      id: session.user.id,
+      sessionId: '',
+      clientId: session.user.clientId,
+      username: session.user.username,
+      displayName: session.user.displayName,
+      role: session.user.role,
+      storeIds: session.user.storeAccess.map((access) => access.storeId),
+    };
+    const storeIds = await this.enabledWebDashboardStoreIds(
+      portalUser.storeIds,
+    );
+    if (!storeIds.length) {
+      await this.auditRefreshFailure(session, 'ACCESS_DISABLED', context);
+      throw new UnauthorizedException('Web dashboard access is not enabled.');
+    }
+
+    const now = new Date();
+    const replacementId = randomUUID();
+    const replacementSecret = randomBytes(48).toString('base64url');
+    const replacementHash = await this.hasher.hash(replacementSecret);
+    const days = this.config.get<number>('PORTAL_REFRESH_TOKEN_TTL_DAYS', 30);
+    const replacement = await this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.portalRefreshSession.updateMany({
+        where: { id: session.id, revokedAt: null },
+        data: {
+          revokedAt: now,
+          revokedReason: 'ROTATED',
+          lastUsedAt: now,
+        },
+      });
+      if (!claimed.count) return null;
+
+      const created = await transaction.portalRefreshSession.create({
+        data: {
+          id: replacementId,
+          portalUserId: session.portalUserId,
+          tokenHash: replacementHash,
+          tokenFamilyId: session.tokenFamilyId,
+          userAgent: context.userAgent?.slice(0, 500),
+          ipAddress: context.ipAddress?.slice(0, 80),
+          expiresAt: new Date(now.getTime() + days * 86_400_000),
+        },
+      });
+      await transaction.portalRefreshSession.update({
+        where: { id: session.id },
+        data: { replacedBySessionId: created.id },
+      });
+      return created;
     });
-    return this.issueSession(
-      {
-        id: session.user.id,
-        sessionId: '',
-        clientId: session.user.clientId,
-        username: session.user.username,
-        displayName: session.user.displayName,
-        role: session.user.role,
-        storeIds: session.user.storeAccess.map((access) => access.storeId),
-      },
-      context,
+
+    if (!replacement) {
+      const latest = await this.prisma.portalRefreshSession.findUnique({
+        where: { id: session.id },
+        select: {
+          id: true,
+          portalUserId: true,
+          tokenFamilyId: true,
+          replacedBySessionId: true,
+          revokedReason: true,
+          lastUsedAt: true,
+        },
+      });
+      if (latest && this.isRecentRotation(latest)) {
+        await this.auditRefreshFailure(latest, 'CONCURRENT_ROTATION', context);
+        throw this.concurrentRefreshException();
+      }
+      await this.revokeRefreshFamilyForReplay(latest ?? session, context);
+      throw new UnauthorizedException('Refresh token is invalid or expired.');
+    }
+    return this.sessionResult(
+      portalUser,
+      storeIds,
+      replacement.id,
+      replacementSecret,
     );
   }
 
@@ -347,8 +426,8 @@ export class PortalService {
         select: { portalUserId: true, userAgent: true },
       });
       await this.prisma.portalRefreshSession.updateMany({
-        where: { id },
-        data: { revokedAt: new Date() },
+        where: { id, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: 'LOGOUT' },
       });
       if (session) {
         await this.prisma.auditLog.create({
@@ -394,7 +473,7 @@ export class PortalService {
       }),
       this.prisma.portalRefreshSession.updateMany({
         where: { portalUserId: user.id, revokedAt: null },
-        data: { revokedAt: now },
+        data: { revokedAt: now, revokedReason: 'PASSWORD_CHANGED' },
       }),
       this.prisma.auditLog.create({
         data: {
@@ -502,7 +581,7 @@ export class PortalService {
       });
       await transaction.portalRefreshSession.updateMany({
         where: { portalUserId: reset.portalUserId, revokedAt: null },
-        data: { revokedAt: now },
+        data: { revokedAt: now, revokedReason: 'PASSWORD_RESET' },
       });
       await transaction.auditLog.create({
         data: {
@@ -546,7 +625,7 @@ export class PortalService {
     const revokedAt = new Date();
     const result = await this.prisma.portalRefreshSession.updateMany({
       where: { id: sessionId, portalUserId: user.id, revokedAt: null },
-      data: { revokedAt },
+      data: { revokedAt, revokedReason: 'USER_REVOKED' },
     });
     if (!result.count) throw new NotFoundException('Session was not found.');
     await this.prisma.auditLog.create({
@@ -567,7 +646,7 @@ export class PortalService {
         id: { not: user.sessionId },
         revokedAt: null,
       },
-      data: { revokedAt: now },
+      data: { revokedAt: now, revokedReason: 'OTHER_SESSIONS_REVOKED' },
     });
     await this.prisma.auditLog.create({
       data: {
@@ -588,22 +667,34 @@ export class PortalService {
       throw new UnauthorizedException('Web dashboard access is not enabled.');
     }
     const secret = randomBytes(48).toString('base64url');
+    const refreshId = randomUUID();
     const days = this.config.get<number>('PORTAL_REFRESH_TOKEN_TTL_DAYS', 30);
     const refresh = await this.prisma.portalRefreshSession.create({
       data: {
+        id: refreshId,
         portalUserId: user.id,
         tokenHash: await this.hasher.hash(secret),
+        tokenFamilyId: refreshId,
         userAgent: context.userAgent?.slice(0, 500),
         ipAddress: context.ipAddress?.slice(0, 80),
         expiresAt: new Date(Date.now() + days * 86_400_000),
       },
     });
-    const authenticatedUser = { ...user, storeIds, sessionId: refresh.id };
+    return this.sessionResult(user, storeIds, refresh.id, secret);
+  }
+
+  private async sessionResult(
+    user: AuthenticatedPortalUser,
+    storeIds: string[],
+    refreshId: string,
+    refreshSecret: string,
+  ) {
+    const authenticatedUser = { ...user, storeIds, sessionId: refreshId };
     const accessToken = await this.jwt.signAsync(
       {
         sub: user.id,
         clientId: user.clientId,
-        sessionId: refresh.id,
+        sessionId: refreshId,
         tokenUse: 'portal',
       },
       {
@@ -618,9 +709,85 @@ export class PortalService {
     );
     return {
       accessToken,
-      refreshToken: `${refresh.id}.${secret}`,
+      refreshToken: `${refreshId}.${refreshSecret}`,
       user: authenticatedUser,
     };
+  }
+
+  private async auditRefreshFailure(
+    session: {
+      id: string;
+      portalUserId: string;
+      tokenFamilyId: string;
+    },
+    reason: string,
+    context: PortalRequestContext,
+  ): Promise<void> {
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'portal.refresh_failed',
+        resourceType: 'portal_refresh_session',
+        resourceId: session.id,
+        metadata: {
+          portalUserId: session.portalUserId,
+          tokenFamilyId: session.tokenFamilyId,
+          reason,
+          deviceName: this.describeUserAgent(context.userAgent ?? null),
+        },
+      },
+    });
+  }
+
+  private async revokeRefreshFamilyForReplay(
+    session: {
+      id: string;
+      portalUserId: string;
+      tokenFamilyId: string;
+    },
+    context: PortalRequestContext,
+  ): Promise<void> {
+    const now = new Date();
+    await this.prisma.$transaction(async (transaction) => {
+      const revoked = await transaction.portalRefreshSession.updateMany({
+        where: { tokenFamilyId: session.tokenFamilyId, revokedAt: null },
+        data: { revokedAt: now, revokedReason: 'REPLAY_DETECTED' },
+      });
+      await transaction.auditLog.create({
+        data: {
+          action: 'portal.refresh_replay_detected',
+          resourceType: 'portal_refresh_session',
+          resourceId: session.id,
+          metadata: {
+            portalUserId: session.portalUserId,
+            tokenFamilyId: session.tokenFamilyId,
+            revokedSessionCount: revoked.count,
+            deviceName: this.describeUserAgent(context.userAgent ?? null),
+          },
+        },
+      });
+    });
+  }
+
+  private isRecentRotation(session: {
+    revokedReason: string | null;
+    replacedBySessionId: string | null;
+    lastUsedAt: Date;
+  }): boolean {
+    if (session.revokedReason !== 'ROTATED' || !session.replacedBySessionId) {
+      return false;
+    }
+    const graceSeconds = this.config.get<number>(
+      'PORTAL_REFRESH_REUSE_GRACE_SECONDS',
+      5,
+    );
+    return session.lastUsedAt.getTime() >= Date.now() - graceSeconds * 1_000;
+  }
+
+  private concurrentRefreshException(): ConflictException {
+    return new ConflictException({
+      code: 'PORTAL_REFRESH_ALREADY_ROTATED',
+      message: 'The browser session was refreshed by another request.',
+    });
   }
 
   private async enabledWebDashboardStoreIds(

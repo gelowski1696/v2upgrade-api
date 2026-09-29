@@ -346,18 +346,22 @@ model PortalSavedView {
 }
 
 model PortalRefreshSession {
-  id           String     @id @default(uuid()) @db.Uuid
-  portalUserId String     @map("portal_user_id") @db.Uuid
-  tokenHash    String     @map("token_hash") @db.VarChar(255)
-  userAgent    String?    @map("user_agent") @db.VarChar(500)
-  ipAddress    String?    @map("ip_address") @db.VarChar(80)
-  lastUsedAt   DateTime   @default(now()) @map("last_used_at") @db.Timestamptz(3)
-  expiresAt    DateTime   @map("expires_at") @db.Timestamptz(3)
-  revokedAt    DateTime?  @map("revoked_at") @db.Timestamptz(3)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  user         PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  id                  String     @id @default(uuid()) @db.Uuid
+  portalUserId        String     @map("portal_user_id") @db.Uuid
+  tokenHash           String     @map("token_hash") @db.VarChar(255)
+  tokenFamilyId       String     @default(uuid()) @map("token_family_id") @db.Uuid
+  replacedBySessionId String?    @map("replaced_by_session_id") @db.Uuid
+  revokedReason       String?    @map("revoked_reason") @db.VarChar(40)
+  userAgent           String?    @map("user_agent") @db.VarChar(500)
+  ipAddress           String?    @map("ip_address") @db.VarChar(80)
+  lastUsedAt          DateTime   @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt           DateTime   @map("expires_at") @db.Timestamptz(3)
+  revokedAt           DateTime?  @map("revoked_at") @db.Timestamptz(3)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  user                PortalUser @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
 
   @@index([portalUserId, revokedAt])
+  @@index([tokenFamilyId, revokedAt])
   @@map("portal_refresh_sessions")
 }
 

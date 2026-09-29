@@ -71,6 +71,19 @@ export function validateEnvironment(config: Environment): Environment {
       'PORTAL_PASSWORD_RESET_TTL_MINUTES must be a positive integer.',
     );
   }
+  const portalRefreshReuseGraceSeconds = numberValue(
+    config.PORTAL_REFRESH_REUSE_GRACE_SECONDS,
+    5,
+  );
+  if (
+    !Number.isInteger(portalRefreshReuseGraceSeconds) ||
+    portalRefreshReuseGraceSeconds < 1 ||
+    portalRefreshReuseGraceSeconds > 30
+  ) {
+    throw new Error(
+      'PORTAL_REFRESH_REUSE_GRACE_SECONDS must be an integer from 1 to 30.',
+    );
+  }
   return {
     ...config,
     NODE_ENV: nodeEnv,
@@ -85,6 +98,7 @@ export function validateEnvironment(config: Environment): Environment {
       30,
     ),
     PORTAL_PASSWORD_RESET_TTL_MINUTES: portalPasswordResetMinutes,
+    PORTAL_REFRESH_REUSE_GRACE_SECONDS: portalRefreshReuseGraceSeconds,
     STORE_SNAPSHOT_ROOT: stringValue(config.STORE_SNAPSHOT_ROOT, './data'),
     STORE_SNAPSHOT_MAX_BYTES: numberValue(
       config.STORE_SNAPSHOT_MAX_BYTES,

@@ -18,6 +18,7 @@ describe('validateEnvironment', () => {
       REFRESH_TOKEN_TTL_DAYS: 30,
       LICENSE_LEASE_DAYS: 7,
       PORTAL_PASSWORD_RESET_TTL_MINUTES: 60,
+      PORTAL_REFRESH_REUSE_GRACE_SECONDS: 5,
       STORE_SNAPSHOT_RETAIN_PREVIOUS: 2,
       PORTAL_SCHEDULED_REPORTS_ENABLED: false,
     });
@@ -36,6 +37,17 @@ describe('validateEnvironment', () => {
     expect(() =>
       validateEnvironment({ ...validEnvironment, JWT_ACCESS_SECRET: 'short' }),
     ).toThrow('JWT_ACCESS_SECRET must contain at least 32 characters.');
+  });
+
+  it('rejects an unsafe refresh reuse grace period', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        PORTAL_REFRESH_REUSE_GRACE_SECONDS: 0,
+      }),
+    ).toThrow(
+      'PORTAL_REFRESH_REUSE_GRACE_SECONDS must be an integer from 1 to 30.',
+    );
   });
 
   it('rejects an invalid snapshot retention count', () => {
