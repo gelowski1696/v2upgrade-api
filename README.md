@@ -67,6 +67,12 @@ npm run admin:create -- adminvmjam "replace-with-a-strong-password" "System Admi
 
 The command refuses passwords shorter than 12 characters and never creates a default account automatically.
 
+Reset an existing administrator password with:
+
+```powershell
+npm run admin:reset-password -- adminvmjam "replace-with-a-new-strong-password"
+```
+
 ## Run
 
 ```powershell
@@ -121,6 +127,12 @@ POST   /api/v1/subscriptions/:id/suspend
 POST   /api/v1/subscriptions/:id/reactivate
 POST   /api/v1/subscriptions/:id/cancel
 POST   /api/v1/subscriptions/:id/renew
+
+GET    /api/v1/finance/overview
+GET    /api/v1/finance/expenses
+POST   /api/v1/finance/payments
+POST   /api/v1/finance/expenses
+DELETE /api/v1/finance/expenses/:id
 
 POST   /api/v1/licenses/validate
 
