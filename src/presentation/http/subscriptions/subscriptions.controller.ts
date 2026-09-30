@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -135,6 +136,12 @@ export class SubscriptionsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.subscriptions.renew(id, user.id, input);
+  }
+
+  @Delete(':id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  delete(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.subscriptions.delete(id, user.id);
   }
 
   private transition(

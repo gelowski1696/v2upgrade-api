@@ -39,6 +39,7 @@ describe('SubscriptionsService', () => {
     updateEntitlements: jest.fn(),
     transition: jest.fn(),
     renew: jest.fn(),
+    softDelete: jest.fn(),
     events: jest.fn(),
   };
   const audit: jest.Mocked<AuditWriter> = { record: jest.fn() };
@@ -346,4 +347,68 @@ describe('SubscriptionsService', () => {
       }),
     );
   });
+
+  it('soft deletes a subscription and preserves an audit record', async () => {
+    subscriptions.findById.mockResolvedValue(
+      subscriptionRecord({
+        status: 'ACTIVE',
+        device: {
+          id: 'device-row-id',
+          installationId: 'POS-DEVICE-0001',
+          label: 'Primary POS',
+          platform: 'windows',
+          status: 'ACTIVE',
+          lastSeenAt: null,
+        },
+      }),
+    );
+    subscriptions.softDelete.mockResolvedValue();
+
+    const result = await service.delete('subscription-id', 'admin-id');
+
+    expect(subscriptions.softDelete.mock.calls[0]?.[0]).toBe('subscription-id');
+    expect(subscriptions.softDelete.mock.calls[0]?.[1]).toBe('admin-id');
+    expect(subscriptions.softDelete.mock.calls[0]?.[2]).toBeInstanceOf(Date);
+    expect(result.deleted).toBe(true);
+    expect(result.deletedAt).toBeInstanceOf(Date);
+    const recorded = audit.record.mock.calls[0]?.[0];
+    expect(recorded?.action).toBe('subscription.deleted');
+    expect(recorded?.resourceId).toBe('subscription-id');
+    expect(recorded?.metadata?.['previousStatus']).toBe('ACTIVE');
+    expect(recorded?.metadata?.['deviceId']).toBe('POS-DEVICE-0001');
+  });
 });
+
+function subscriptionRecord(
+  overrides: Partial<SubscriptionRecord> = {},
+): SubscriptionRecord {
+  return {
+    id: 'subscription-id',
+    clientId: 'client-id',
+    planVersionId: 'version-id',
+    status: 'DRAFT',
+    startsAt: new Date(),
+    renewsAt: null,
+    expiresAt: null,
+    graceEndsAt: null,
+    suspendedAt: null,
+    cancelledAt: null,
+    amount: '1499.00',
+    currency: 'PHP',
+    billingInterval: 'MONTHLY',
+    maxDevices: 1,
+    entitlements: {},
+    notes: null,
+    createdById: 'actor-id',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    client: { id: 'client-id', code: 'CLIENT-1', businessName: 'Client One' },
+    planVersion: {
+      id: 'version-id',
+      version: 1,
+      plan: { id: 'plan-id', code: 'STANDARD', name: 'Standard' },
+    },
+    device: null,
+    ...overrides,
+  };
+}

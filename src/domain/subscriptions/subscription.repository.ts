@@ -117,5 +117,6 @@ export interface SubscriptionRepository {
     actorId: string,
     reason?: string,
   ): Promise<SubscriptionRecord>;
+  softDelete(id: string, actorId: string, deletedAt: Date): Promise<void>;
   events(id: string): Promise<SubscriptionEventRecord[]>;
 }

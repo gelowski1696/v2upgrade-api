@@ -194,9 +194,11 @@ export class FinanceService {
     this.positiveAmount(input.amount);
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: input.subscriptionId },
-      select: { id: true, currency: true },
+      select: { id: true, currency: true, deletedAt: true },
     });
-    if (!subscription) throw new NotFoundException('Subscription not found.');
+    if (!subscription || subscription.deletedAt) {
+      throw new NotFoundException('Subscription not found.');
+    }
     const currency = input.currency ?? subscription.currency;
     if (currency !== subscription.currency) {
       throw new BadRequestException(

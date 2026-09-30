@@ -221,6 +221,25 @@ export class SubscriptionsService {
     return this.subscriptions.events(id);
   }
 
+  async delete(id: string, actorId: string) {
+    const subscription = await this.get(id);
+    const deletedAt = new Date();
+    await this.subscriptions.softDelete(id, actorId, deletedAt);
+    await this.audit.record({
+      actorId,
+      action: 'subscription.deleted',
+      resourceType: 'subscription',
+      resourceId: id,
+      metadata: {
+        clientId: subscription.clientId,
+        planVersionId: subscription.planVersionId,
+        previousStatus: subscription.status,
+        deviceId: subscription.device?.installationId,
+      },
+    });
+    return { deleted: true, deletedAt };
+  }
+
   async updateFeatureMods(
     id: string,
     input: Record<string, unknown>,

@@ -48,6 +48,7 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     query: PageQuery & { status?: SubscriptionStatus; clientId?: string },
   ): Promise<Page<SubscriptionRecord>> {
     const where: Prisma.SubscriptionWhereInput = {
+      deletedAt: null,
       status: query.status,
       clientId: query.clientId,
       ...(query.search
@@ -93,8 +94,8 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
   }
 
   async findById(id: string): Promise<SubscriptionRecord | null> {
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id },
+    const subscription = await this.prisma.subscription.findFirst({
+      where: { id, deletedAt: null },
       include: subscriptionInclude,
     });
     return subscription ? this.map(subscription) : null;
@@ -298,6 +299,45 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
         actor: { select: { id: true, displayName: true } },
       },
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async softDelete(
+    id: string,
+    actorId: string,
+    deletedAt: Date,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      const devices = await transaction.device.findMany({
+        where: { subscriptionId: id },
+        select: { id: true },
+      });
+      await transaction.licenseLease.updateMany({
+        where: { subscriptionId: id, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: deletedAt },
+      });
+      for (const device of devices) {
+        await transaction.device.update({
+          where: { id: device.id },
+          data: {
+            installationId: `DELETED-${device.id}`,
+            status: 'REVOKED',
+            revokedAt: deletedAt,
+          },
+        });
+      }
+      const deleted = await transaction.subscription.updateMany({
+        where: { id, deletedAt: null },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: deletedAt,
+          deletedAt,
+          deletedById: actorId,
+        },
+      });
+      if (deleted.count !== 1) {
+        throw new Error('SUBSCRIPTION_CONCURRENT_DELETE');
+      }
     });
   }
 

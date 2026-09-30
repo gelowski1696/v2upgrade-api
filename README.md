@@ -147,6 +147,7 @@ POST   /api/v1/subscriptions/:id/suspend
 POST   /api/v1/subscriptions/:id/reactivate
 POST   /api/v1/subscriptions/:id/cancel
 POST   /api/v1/subscriptions/:id/renew
+DELETE /api/v1/subscriptions/:id
 
 GET    /api/v1/finance/overview
 GET    /api/v1/finance/expenses

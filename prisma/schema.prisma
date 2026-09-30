@@ -161,6 +161,7 @@ model User {
   updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   refreshSessions      RefreshSession[]
   createdSubscriptions Subscription[]      @relation("SubscriptionCreatedBy")
+  deletedSubscriptions Subscription[]      @relation("SubscriptionDeletedBy")
   subscriptionEvents   SubscriptionEvent[] @relation("SubscriptionEventActor")
   paymentRecords       PaymentRecord[]     @relation("PaymentCreatedBy")
   voidedPayments       PaymentRecord[]     @relation("PaymentVoidedBy")
@@ -541,6 +542,8 @@ model Subscription {
   graceEndsAt     DateTime?           @map("grace_ends_at") @db.Timestamptz(3)
   suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(3)
   cancelledAt     DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+  deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(3)
+  deletedById     String?             @map("deleted_by_id") @db.Uuid
   amount          Decimal             @db.Decimal(12, 2)
   currency        String              @db.Char(3)
   billingInterval BillingInterval     @map("billing_interval")
@@ -553,6 +556,7 @@ model Subscription {
   client          Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
   planVersion     PlanVersion         @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
   createdBy       User                @relation("SubscriptionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  deletedBy       User?               @relation("SubscriptionDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
   events          SubscriptionEvent[]
   devices         Device[]
   licenseLeases   LicenseLease[]
@@ -560,6 +564,7 @@ model Subscription {
 
   @@index([clientId, status])
   @@index([status, expiresAt])
+  @@index([deletedAt, status, createdAt])
   @@map("subscriptions")
 }
 
