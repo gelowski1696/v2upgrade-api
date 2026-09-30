@@ -151,6 +151,7 @@ POST   /api/v1/subscriptions/:id/renew
 GET    /api/v1/finance/overview
 GET    /api/v1/finance/expenses
 POST   /api/v1/finance/payments
+POST   /api/v1/finance/payments/:id/void
 POST   /api/v1/finance/expenses
 DELETE /api/v1/finance/expenses/:id
 

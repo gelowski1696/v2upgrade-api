@@ -8,6 +8,7 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 import { PageQueryDto } from '../common/page-query.dto.js';
 
@@ -89,6 +90,15 @@ export class CreatePaymentDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+}
+
+export class VoidPaymentDto {
+  @ApiProperty({ example: 'Duplicate payment entry' })
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(250)
+  reason!: string;
 }
 
 export class CreateExpenseDto {

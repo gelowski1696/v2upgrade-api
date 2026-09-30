@@ -39,6 +39,11 @@ enum BillingInterval {
   CUSTOM
 }
 
+enum PaymentStatus {
+  POSTED
+  VOIDED
+}
+
 enum SubscriptionStatus {
   DRAFT
   TRIAL
@@ -158,6 +163,7 @@ model User {
   createdSubscriptions Subscription[]      @relation("SubscriptionCreatedBy")
   subscriptionEvents   SubscriptionEvent[] @relation("SubscriptionEventActor")
   paymentRecords       PaymentRecord[]     @relation("PaymentCreatedBy")
+  voidedPayments       PaymentRecord[]     @relation("PaymentVoidedBy")
   expensesCreated      Expense[]           @relation("ExpenseCreatedBy")
   auditLogs            AuditLog[]
 
@@ -672,20 +678,26 @@ model LicenseLease {
 }
 
 model PaymentRecord {
-  id             String       @id @default(uuid()) @db.Uuid
-  subscriptionId String       @map("subscription_id") @db.Uuid
-  amount         Decimal      @db.Decimal(12, 2)
-  currency       String       @default("PHP") @db.Char(3)
-  reference      String?      @db.VarChar(120)
-  paidAt         DateTime     @map("paid_at") @db.Timestamptz(3)
+  id             String        @id @default(uuid()) @db.Uuid
+  subscriptionId String        @map("subscription_id") @db.Uuid
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("PHP") @db.Char(3)
+  reference      String?       @db.VarChar(120)
+  paidAt         DateTime      @map("paid_at") @db.Timestamptz(3)
   notes          String?
-  createdById    String       @map("created_by_id") @db.Uuid
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
-  createdBy      User         @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  status         PaymentStatus @default(POSTED)
+  voidedAt       DateTime?     @map("voided_at") @db.Timestamptz(3)
+  voidedById     String?       @map("voided_by_id") @db.Uuid
+  voidReason     String?       @map("void_reason") @db.VarChar(250)
+  createdById    String        @map("created_by_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  createdBy      User          @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  voidedBy       User?         @relation("PaymentVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict)
 
   @@index([subscriptionId, paidAt])
   @@index([paidAt, currency])
+  @@index([status, paidAt, currency])
   @@map("payment_records")
 }
 

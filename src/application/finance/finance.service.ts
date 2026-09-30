@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -39,6 +40,9 @@ export class FinanceService {
           reference: true,
           paidAt: true,
           notes: true,
+          status: true,
+          voidedAt: true,
+          voidReason: true,
           subscription: {
             select: {
               id: true,
@@ -58,6 +62,9 @@ export class FinanceService {
         orderBy: { incurredAt: 'desc' },
       }),
     ]);
+    const postedPayments = payments.filter(
+      (payment) => payment.status === 'POSTED',
+    );
 
     const daily = new Map<
       string,
@@ -77,7 +84,7 @@ export class FinanceService {
       { planId: string; planName: string; revenue: number; payments: number }
     >();
     let revenue = 0;
-    for (const payment of payments) {
+    for (const payment of postedPayments) {
       const amount = Number(payment.amount);
       revenue += amount;
       const day = payment.paidAt.toISOString().slice(0, 10);
@@ -122,7 +129,7 @@ export class FinanceService {
         revenue: this.money(revenue),
         expenses: this.money(expenseTotal),
         netIncome: this.money(revenue - expenseTotal),
-        paymentCount: payments.length,
+        paymentCount: postedPayments.length,
         expenseCount: expenses.length,
       },
       daily: dailyRows,
@@ -137,6 +144,9 @@ export class FinanceService {
         reference: payment.reference,
         paidAt: payment.paidAt,
         notes: payment.notes,
+        status: payment.status,
+        voidedAt: payment.voidedAt,
+        voidReason: payment.voidReason,
         client: payment.subscription.client,
         plan: payment.subscription.planVersion.plan,
       })),
@@ -248,6 +258,57 @@ export class FinanceService {
       },
     });
     return this.expenseRecord(expense);
+  }
+
+  async voidPayment(id: string, reason: string, actorId: string) {
+    const voidReason = reason.trim();
+    if (voidReason.length < 3) {
+      throw new BadRequestException(
+        'The payment void reason must contain at least 3 characters.',
+      );
+    }
+    const payment = await this.prisma.paymentRecord.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        subscriptionId: true,
+        amount: true,
+        currency: true,
+        status: true,
+      },
+    });
+    if (!payment) throw new NotFoundException('Payment not found.');
+    if (payment.status === 'VOIDED') {
+      throw new ConflictException('Payment is already voided.');
+    }
+
+    const voidedAt = new Date();
+    const claimed = await this.prisma.paymentRecord.updateMany({
+      where: { id, status: 'POSTED' },
+      data: {
+        status: 'VOIDED',
+        voidedAt,
+        voidedById: actorId,
+        voidReason,
+      },
+    });
+    if (!claimed.count) {
+      throw new ConflictException('Payment is already voided.');
+    }
+
+    await this.audit.record({
+      actorId,
+      action: 'payment.voided',
+      resourceType: 'payment_record',
+      resourceId: id,
+      metadata: {
+        subscriptionId: payment.subscriptionId,
+        amount: payment.amount.toFixed(2),
+        currency: payment.currency,
+        reason: voidReason,
+      },
+    });
+    return { id, status: 'VOIDED' as const, voidedAt, voidReason };
   }
 
   async deleteExpense(id: string, actorId: string) {

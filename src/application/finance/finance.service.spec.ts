@@ -18,6 +18,9 @@ describe('FinanceService', () => {
         reference: 'RECEIPT-1',
         paidAt: new Date('2026-09-03T00:00:00.000Z'),
         notes: null,
+        status: 'POSTED',
+        voidedAt: null,
+        voidReason: null,
         subscription: {
           id: 'subscription-1',
           client: { id: 'client-1', businessName: 'Store One' },
@@ -31,6 +34,9 @@ describe('FinanceService', () => {
         reference: null,
         paidAt: new Date('2026-09-03T12:00:00.000Z'),
         notes: null,
+        status: 'VOIDED',
+        voidedAt: new Date('2026-09-04T00:00:00.000Z'),
+        voidReason: 'Duplicate payment',
         subscription: {
           id: 'subscription-2',
           client: { id: 'client-2', businessName: 'Store Two' },
@@ -67,21 +73,27 @@ describe('FinanceService', () => {
     });
 
     expect(result.summary).toEqual({
-      revenue: 1999,
+      revenue: 1499,
       expenses: 700,
-      netIncome: 1299,
-      paymentCount: 2,
+      netIncome: 799,
+      paymentCount: 1,
       expenseCount: 1,
     });
     expect(result.daily.find((row) => row.day === '2026-09-03')).toEqual({
       day: '2026-09-03',
-      revenue: 1999,
+      revenue: 1499,
       expenses: 700,
-      netIncome: 1299,
+      netIncome: 799,
     });
     expect(result.byPlan).toEqual([
-      { planId: 'plan-1', planName: 'Standard', revenue: 1999, payments: 2 },
+      { planId: 'plan-1', planName: 'Standard', revenue: 1499, payments: 1 },
     ]);
+    expect(result.recentPayments[1]).toEqual(
+      expect.objectContaining({
+        status: 'VOIDED',
+        voidReason: 'Duplicate payment',
+      }),
+    );
   });
 
   it('records an expense and writes an audit event', async () => {
@@ -140,6 +152,58 @@ describe('FinanceService', () => {
     );
   });
 
+  it('voids a posted payment without deleting its audit history', async () => {
+    const findUnique = jest.fn().mockResolvedValue({
+      id: 'payment-1',
+      subscriptionId: 'subscription-1',
+      amount: decimal('1499.00'),
+      currency: 'PHP',
+      status: 'POSTED',
+    });
+    const updateMany = jest
+      .fn<
+        (input: {
+          where: { id: string; status: 'POSTED' };
+          data: {
+            status: 'VOIDED';
+            voidedAt: Date;
+            voidedById: string;
+            voidReason: string;
+          };
+        }) => Promise<{ count: number }>
+      >()
+      .mockResolvedValue({ count: 1 });
+    const prisma = {
+      paymentRecord: { findUnique, updateMany },
+    } as unknown as PrismaService;
+    const service = new FinanceService(prisma, audit);
+
+    const result = await service.voidPayment(
+      'payment-1',
+      ' Duplicate payment entry ',
+      'actor-1',
+    );
+
+    const updated = updateMany.mock.calls[0]?.[0];
+    expect(updated?.where).toEqual({ id: 'payment-1', status: 'POSTED' });
+    expect(updated?.data).toEqual(
+      expect.objectContaining({
+        status: 'VOIDED',
+        voidedById: 'actor-1',
+        voidReason: 'Duplicate payment entry',
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({ id: 'payment-1', status: 'VOIDED' }),
+    );
+    expect(audit.record.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        action: 'payment.voided',
+        resourceId: 'payment-1',
+      }),
+    );
+  });
+
   it('rejects invalid, reversed, and oversized finance ranges', async () => {
     const prisma = {} as PrismaService;
     const service = new FinanceService(prisma, audit);
@@ -152,6 +216,14 @@ describe('FinanceService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.overview({ from: '2025-01-01', to: '2026-09-30' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a blank payment void reason', async () => {
+    const service = new FinanceService({} as PrismaService, audit);
+
+    await expect(
+      service.voidPayment('payment-1', '   ', 'actor-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -21,6 +21,7 @@ import {
   CreatePaymentDto,
   FinanceListQueryDto,
   FinanceRangeQueryDto,
+  VoidPaymentDto,
 } from './finance.dto.js';
 
 @ApiTags('Subscription finance')
@@ -47,6 +48,16 @@ export class FinanceController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.finance.createPayment(input, user.id);
+  }
+
+  @Post('payments/:id/void')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  voidPayment(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() input: VoidPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.finance.voidPayment(id, input.reason, user.id);
   }
 
   @Post('expenses')
