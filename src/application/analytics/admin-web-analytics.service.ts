@@ -56,6 +56,29 @@ export class AdminWebAnalyticsService {
     @Inject(AUDIT_WRITER) private readonly audit: AuditWriter,
   ) {}
 
+  async filters(user: AuthenticatedUser) {
+    const clients = await this.prisma.client.findMany({
+      where: { status: 'ACTIVE' },
+      orderBy: { businessName: 'asc' },
+      select: {
+        id: true,
+        code: true,
+        businessName: true,
+        stores: {
+          where: { status: 'ACTIVE' },
+          orderBy: { name: 'asc' },
+          select: { id: true, code: true, name: true },
+        },
+      },
+    });
+    await this.audit.record({
+      actorId: user.id,
+      action: 'WEB_ANALYTICS_FILTERS_VIEWED',
+      resourceType: 'WEB_ANALYTICS',
+    });
+    return { generatedAt: new Date().toISOString(), clients };
+  }
+
   async overview(user: AuthenticatedUser, query: AdminWebAnalyticsQueryDto) {
     const range = this.range(query);
     const scope = this.scopeSql(range.fromDate, range.toExclusive, query);

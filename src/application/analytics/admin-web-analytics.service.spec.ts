@@ -110,4 +110,32 @@ describe('AdminWebAnalyticsService', () => {
     expect(queryRaw).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
+
+  it('returns active client and store filter labels without user data', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: '10000000-0000-4000-8000-000000000010',
+        code: 'CLIENT',
+        businessName: 'Example Business',
+        stores: [
+          {
+            id: '10000000-0000-4000-8000-000000000011',
+            code: 'MAIN',
+            name: 'Main Store',
+          },
+        ],
+      },
+    ]);
+    const prisma = { client: { findMany } } as unknown as PrismaService;
+    const audit: jest.Mocked<AuditWriter> = { record: jest.fn() };
+    const service = new AdminWebAnalyticsService(prisma, audit);
+
+    const result = await service.filters(user);
+
+    expect(result.clients[0]).not.toHaveProperty('ownerName');
+    expect(result.clients[0]).not.toHaveProperty('email');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'WEB_ANALYTICS_FILTERS_VIEWED' }),
+    );
+  });
 });

@@ -16,6 +16,11 @@ import { AdminWebAnalyticsQueryDto } from './admin-web-analytics.dto.js';
 export class AdminWebAnalyticsController {
   constructor(private readonly analytics: AdminWebAnalyticsService) {}
 
+  @Get('filters')
+  filters(@CurrentUser() user: AuthenticatedUser) {
+    return this.analytics.filters(user);
+  }
+
   @Get('overview')
   overview(
     @CurrentUser() user: AuthenticatedUser,
