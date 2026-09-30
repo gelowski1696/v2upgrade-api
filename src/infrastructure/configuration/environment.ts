@@ -17,12 +17,16 @@ function numberValue(value: unknown, fallback: number): number {
     : fallback;
 }
 
-function booleanValue(value: unknown, fallback: boolean): boolean {
+function booleanValue(
+  value: unknown,
+  fallback: boolean,
+  name: string,
+): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value !== 'string' || !value.trim()) return fallback;
   if (value.trim().toLowerCase() === 'true') return true;
   if (value.trim().toLowerCase() === 'false') return false;
-  throw new Error('PORTAL_SCHEDULED_REPORTS_ENABLED must be true or false.');
+  throw new Error(`${name} must be true or false.`);
 }
 
 export function validateEnvironment(config: Environment): Environment {
@@ -132,6 +136,22 @@ export function validateEnvironment(config: Environment): Environment {
     PORTAL_SCHEDULED_REPORTS_ENABLED: booleanValue(
       config.PORTAL_SCHEDULED_REPORTS_ENABLED,
       false,
+      'PORTAL_SCHEDULED_REPORTS_ENABLED',
+    ),
+    OWNER_WEB_ANALYTICS_ENABLED: booleanValue(
+      config.OWNER_WEB_ANALYTICS_ENABLED,
+      true,
+      'OWNER_WEB_ANALYTICS_ENABLED',
+    ),
+    OWNER_REAL_USER_MONITORING_ENABLED: booleanValue(
+      config.OWNER_REAL_USER_MONITORING_ENABLED,
+      true,
+      'OWNER_REAL_USER_MONITORING_ENABLED',
+    ),
+    ADMIN_WEB_ANALYTICS_VIEW_ENABLED: booleanValue(
+      config.ADMIN_WEB_ANALYTICS_VIEW_ENABLED,
+      true,
+      'ADMIN_WEB_ANALYTICS_VIEW_ENABLED',
     ),
   };
 }

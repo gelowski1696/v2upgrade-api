@@ -8,15 +8,31 @@ import { WebAnalyticsService } from './web-analytics.service.js';
 
 describe('WebAnalyticsService', () => {
   const prisma = {
-    client: { findUnique: jest.fn() },
+    client: {
+      findUnique:
+        jest.fn<
+          (input: unknown) => Promise<{ webAnalyticsEnabled: boolean } | null>
+        >(),
+    },
     webAnalyticsEvent: {
-      createMany: jest.fn(),
-      deleteMany: jest.fn(),
+      createMany:
+        jest.fn<
+          (input: {
+            data: Array<Record<string, unknown>>;
+            skipDuplicates: boolean;
+          }) => Promise<{ count: number }>
+        >(),
+      deleteMany: jest.fn<(input: unknown) => Promise<{ count: number }>>(),
     },
   };
   const config = {
-    get: jest.fn((key: string, fallback: unknown) =>
-      key === 'WEB_ANALYTICS_RETENTION_DAYS' ? 90 : fallback,
+    get: jest.fn(
+      (key: string, fallback: unknown) =>
+        ({
+          WEB_ANALYTICS_RETENTION_DAYS: 90,
+          OWNER_WEB_ANALYTICS_ENABLED: true,
+          OWNER_REAL_USER_MONITORING_ENABLED: true,
+        })[key] ?? fallback,
     ),
   };
   const user: AuthenticatedPortalUser = {
@@ -32,6 +48,14 @@ describe('WebAnalyticsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    config.get.mockImplementation(
+      (key: string, fallback: unknown) =>
+        ({
+          WEB_ANALYTICS_RETENTION_DAYS: 90,
+          OWNER_WEB_ANALYTICS_ENABLED: true,
+          OWNER_REAL_USER_MONITORING_ENABLED: true,
+        })[key] ?? fallback,
+    );
     prisma.webAnalyticsEvent.createMany.mockResolvedValue({ count: 1 });
     prisma.webAnalyticsEvent.deleteMany.mockResolvedValue({ count: 0 });
     service = new WebAnalyticsService(
@@ -42,6 +66,19 @@ describe('WebAnalyticsService', () => {
 
   it('does not persist events when the tenant switch is disabled', async () => {
     prisma.client.findUnique.mockResolvedValue({ webAnalyticsEnabled: false });
+
+    await expect(service.ingest(user, batch(), 'Browser')).resolves.toEqual({
+      enabled: false,
+      accepted: 0,
+    });
+    expect(prisma.webAnalyticsEvent.createMany).not.toHaveBeenCalled();
+  });
+
+  it('enforces the global collection switch in configuration', async () => {
+    prisma.client.findUnique.mockResolvedValue({ webAnalyticsEnabled: true });
+    config.get.mockImplementation((key: string, fallback: unknown) =>
+      key === 'OWNER_WEB_ANALYTICS_ENABLED' ? false : fallback,
+    );
 
     await expect(service.ingest(user, batch(), 'Browser')).resolves.toEqual({
       enabled: false,

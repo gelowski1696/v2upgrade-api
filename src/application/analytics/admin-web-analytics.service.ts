@@ -1,4 +1,10 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
   AUDIT_WRITER,
@@ -17,6 +23,10 @@ interface SummaryRow {
   frontendErrors: Numeric;
   apiFailures: Numeric;
   affectedSessions: Numeric;
+  activeClients: Numeric;
+  enabledClients: Numeric;
+  latestEventAt: Date | null;
+  latestWebRelease: string | null;
 }
 
 interface UsageRow {
@@ -51,12 +61,16 @@ interface ErrorRow {
 
 @Injectable()
 export class AdminWebAnalyticsService {
+  private readonly startedAt = Date.now();
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(AUDIT_WRITER) private readonly audit: AuditWriter,
+    private readonly config: ConfigService,
   ) {}
 
   async filters(user: AuthenticatedUser) {
+    this.assertViewEnabled();
     const clients = await this.prisma.client.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { businessName: 'asc' },
@@ -80,6 +94,7 @@ export class AdminWebAnalyticsService {
   }
 
   async overview(user: AuthenticatedUser, query: AdminWebAnalyticsQueryDto) {
+    this.assertViewEnabled();
     const range = this.range(query);
     const scope = this.scopeSql(range.fromDate, range.toExclusive, query);
 
@@ -100,7 +115,13 @@ export class AdminWebAnalyticsService {
             COUNT(*) FILTER (WHERE "event_type" = 'API_FAILURE') AS "apiFailures",
             COUNT(DISTINCT "portal_session_id") FILTER (
               WHERE "event_type" IN ('FRONTEND_ERROR', 'API_FAILURE')
-            ) AS "affectedSessions"
+            ) AS "affectedSessions",
+            (SELECT COUNT(*) FROM "clients" WHERE "status" = 'ACTIVE') AS "activeClients",
+            (SELECT COUNT(*) FROM "clients"
+              WHERE "status" = 'ACTIVE' AND "web_analytics_enabled" = TRUE
+            ) AS "enabledClients",
+            MAX("occurred_at") AS "latestEventAt",
+            (ARRAY_AGG("app_release" ORDER BY "occurred_at" DESC))[1] AS "latestWebRelease"
           FROM "web_analytics_events"
           WHERE ${scope}
         `),
@@ -120,6 +141,7 @@ export class AdminWebAnalyticsService {
           FROM "web_analytics_events"
           WHERE ${scope} AND "event_type" = 'PAGE_VIEW'
           GROUP BY "route"
+          HAVING COUNT(DISTINCT "portal_user_id") >= 3
           ORDER BY "count" DESC, "route"
           LIMIT 10
         `),
@@ -128,6 +150,7 @@ export class AdminWebAnalyticsService {
           FROM "web_analytics_events"
           WHERE ${scope} AND "event_type" = 'FEATURE_USED' AND "feature" IS NOT NULL
           GROUP BY "feature"
+          HAVING COUNT(DISTINCT "portal_user_id") >= 3
           ORDER BY "count" DESC, "feature"
           LIMIT 10
         `),
@@ -141,6 +164,7 @@ export class AdminWebAnalyticsService {
           FROM "web_analytics_events"
           WHERE ${scope} AND "event_type" = 'WEB_VITAL' AND "metric_value" IS NOT NULL
           GROUP BY "route", "metric_name", "device_class"
+          HAVING COUNT(DISTINCT "portal_user_id") >= 3
           ORDER BY "sampleCount" DESC, "route"
           LIMIT 50
         `),
@@ -156,6 +180,7 @@ export class AdminWebAnalyticsService {
           FROM "web_analytics_events"
           WHERE ${scope} AND "event_type" IN ('FRONTEND_ERROR', 'API_FAILURE')
           GROUP BY "event_type", "error_code", "app_release"
+          HAVING COUNT(DISTINCT "portal_session_id") >= 3
           ORDER BY "count" DESC, "lastSeenAt" DESC
           LIMIT 25
         `),
@@ -168,9 +193,27 @@ export class AdminWebAnalyticsService {
       frontendErrors: 0,
       apiFailures: 0,
       affectedSessions: 0,
+      activeClients: 0,
+      enabledClients: 0,
+      latestEventAt: null,
+      latestWebRelease: null,
     };
     const sessions = count(summary.sessions);
     const affectedSessions = count(summary.affectedSessions);
+    const activeUsers = count(summary.activeUsers);
+    const activeClients = count(summary.activeClients);
+    const enabledClients = count(summary.enabledClients);
+    const collectionGloballyEnabled = this.config.get<boolean>(
+      'OWNER_WEB_ANALYTICS_ENABLED',
+      true,
+    );
+    const collectionState =
+      !collectionGloballyEnabled || enabledClients === 0
+        ? 'DISABLED'
+        : enabledClients < activeClients
+          ? 'PARTIAL'
+          : 'ACTIVE';
+    const breakdownsSuppressed = activeUsers > 0 && activeUsers < 3;
 
     await this.audit.record({
       actorId: user.id,
@@ -192,8 +235,40 @@ export class AdminWebAnalyticsService {
       },
       generatedAt: new Date().toISOString(),
       metricVersion: '1.0',
+      environment: this.config.get<string>('NODE_ENV', 'development'),
+      health: {
+        status: 'OPERATIONAL' as const,
+        api: {
+          version: this.config.get<string>('APP_VERSION', '0.0.1'),
+          release: this.config.get<string>('APP_RELEASE', 'development'),
+          uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1_000),
+          database: 'AVAILABLE' as const,
+        },
+        ownerDashboard: {
+          observedRelease: summary.latestWebRelease,
+          latestSignalAt: summary.latestEventAt?.toISOString() ?? null,
+        },
+        historicalAvailabilityAvailable: false,
+      },
+      collection: {
+        state: collectionState,
+        activeClients,
+        enabledClients,
+        realUserMonitoringEnabled: this.config.get<boolean>(
+          'OWNER_REAL_USER_MONITORING_ENABLED',
+          true,
+        ),
+        retentionDays: this.config.get<number>(
+          'WEB_ANALYTICS_RETENTION_DAYS',
+          90,
+        ),
+      },
+      privacy: {
+        minimumGroupSize: 3,
+        breakdownsSuppressed,
+      },
       summary: {
-        activeUsers: count(summary.activeUsers),
+        activeUsers,
         sessions,
         pageViews: count(summary.pageViews),
         frontendErrors: count(summary.frontendErrors),
@@ -209,20 +284,22 @@ export class AdminWebAnalyticsService {
         sessions: count(row.sessions),
         pageViews: count(row.pageViews),
       })),
-      routes: routeRows.map(namedCount),
-      features: featureRows.map(namedCount),
-      performance: performanceRows.map((row) => {
-        const sampleCount = count(row.sampleCount);
-        return {
-          route: row.route,
-          metricName: row.metricName,
-          deviceClass: row.deviceClass,
-          sampleCount,
-          p75: round(Number(row.p75), row.metricName === 'CLS' ? 4 : 0),
-          insufficientSample: sampleCount < 20,
-        };
-      }),
-      errors: errorRows.map((row) => ({
+      routes: breakdownsSuppressed ? [] : routeRows.map(namedCount),
+      features: breakdownsSuppressed ? [] : featureRows.map(namedCount),
+      performance: breakdownsSuppressed
+        ? []
+        : performanceRows.map((row) => {
+            const sampleCount = count(row.sampleCount);
+            return {
+              route: row.route,
+              metricName: row.metricName,
+              deviceClass: row.deviceClass,
+              sampleCount,
+              p75: round(Number(row.p75), row.metricName === 'CLS' ? 4 : 0),
+              insufficientSample: sampleCount < 20,
+            };
+          }),
+      errors: (breakdownsSuppressed ? [] : errorRows).map((row) => ({
         eventType: row.eventType,
         errorCode: row.errorCode,
         appRelease: row.appRelease,
@@ -232,6 +309,12 @@ export class AdminWebAnalyticsService {
         lastSeenAt: row.lastSeenAt.toISOString(),
       })),
     };
+  }
+
+  private assertViewEnabled(): void {
+    if (!this.config.get<boolean>('ADMIN_WEB_ANALYTICS_VIEW_ENABLED', true)) {
+      throw new ForbiddenException('Website analytics reporting is disabled.');
+    }
   }
 
   private range(query: AdminWebAnalyticsQueryDto) {

@@ -30,7 +30,13 @@ export class WebAnalyticsService {
       select: { webAnalyticsEnabled: true },
     });
     return {
-      enabled: client?.webAnalyticsEnabled === true,
+      enabled:
+        this.config.get<boolean>('OWNER_WEB_ANALYTICS_ENABLED', true) &&
+        client?.webAnalyticsEnabled === true,
+      realUserMonitoringEnabled: this.config.get<boolean>(
+        'OWNER_REAL_USER_MONITORING_ENABLED',
+        true,
+      ),
       maximumBatchSize: 25,
       retentionDays: this.retentionDays(),
       eventTypes: webAnalyticsEventTypes,

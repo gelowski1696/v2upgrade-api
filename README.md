@@ -85,6 +85,15 @@ npm run start:dev
 
 The API stores uploaded database snapshots below `STORE_SNAPSHOT_ROOT`. In production, place this directory on persistent storage available only to the API service account. Back up this directory together with PostgreSQL metadata.
 
+Owner-dashboard analytics has three API-enforced rollout switches:
+
+- `OWNER_WEB_ANALYTICS_ENABLED` controls first-party usage collection globally.
+- `OWNER_REAL_USER_MONITORING_ENABLED` controls Web Vitals, browser errors, and API-failure signals.
+- `ADMIN_WEB_ANALYTICS_VIEW_ENABLED` controls the protected subscription-app reporting endpoints.
+
+All default to `true`; the existing per-client analytics switch can still disable collection for one
+tenant. Reporting remains restricted to `SUPER_ADMIN` accounts.
+
 The owner dashboard origin must be present exactly in `CORS_ORIGINS` and `PORTAL_WEB_ORIGINS`. The browser portal uses
 credentialed, host-only refresh cookies, so production must use HTTPS and must not use a wildcard
 CORS origin. Keep `PORTAL_WEB_ORIGINS` limited to the owner dashboard (currently

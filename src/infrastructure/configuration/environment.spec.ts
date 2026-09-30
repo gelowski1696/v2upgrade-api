@@ -21,6 +21,9 @@ describe('validateEnvironment', () => {
       PORTAL_REFRESH_REUSE_GRACE_SECONDS: 5,
       STORE_SNAPSHOT_RETAIN_PREVIOUS: 2,
       PORTAL_SCHEDULED_REPORTS_ENABLED: false,
+      OWNER_WEB_ANALYTICS_ENABLED: true,
+      OWNER_REAL_USER_MONITORING_ENABLED: true,
+      ADMIN_WEB_ANALYTICS_VIEW_ENABLED: true,
     });
   });
 
@@ -82,5 +85,27 @@ describe('validateEnvironment', () => {
         PORTAL_SCHEDULED_REPORTS_ENABLED: 'sometimes',
       }),
     ).toThrow('PORTAL_SCHEDULED_REPORTS_ENABLED must be true or false.');
+  });
+
+  it('validates analytics feature switches', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        OWNER_WEB_ANALYTICS_ENABLED: 'false',
+        OWNER_REAL_USER_MONITORING_ENABLED: 'false',
+        ADMIN_WEB_ANALYTICS_VIEW_ENABLED: 'true',
+      }),
+    ).toMatchObject({
+      OWNER_WEB_ANALYTICS_ENABLED: false,
+      OWNER_REAL_USER_MONITORING_ENABLED: false,
+      ADMIN_WEB_ANALYTICS_VIEW_ENABLED: true,
+    });
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        ADMIN_WEB_ANALYTICS_VIEW_ENABLED: 'sometimes',
+      }),
+    ).toThrow('ADMIN_WEB_ANALYTICS_VIEW_ENABLED must be true or false.');
   });
 });
