@@ -14,6 +14,12 @@ export interface RefreshSessionRecord {
   id: string;
   userId: string;
   tokenHash: string;
+  tokenFamilyId: string;
+  replacedBySessionId: string | null;
+  revokedReason: string | null;
+  browserSession: boolean;
+  persistent: boolean;
+  lastUsedAt: Date;
   expiresAt: Date;
   revokedAt: Date | null;
 }

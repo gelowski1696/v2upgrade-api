@@ -103,12 +103,23 @@ revokes the remaining active family and records `portal.refresh_replay_detected`
 `PORTAL_REFRESH_REUSE_GRACE_SECONDS` provides a narrow retry window for legitimate concurrent tabs;
 it defaults to five seconds and may be configured only from 1 to 30 seconds.
 
+The subscription-admin browser uses the equivalent `/auth/web/*` cookie flow. Keep
+`ADMIN_WEB_ORIGINS` limited to the exact admin application origin (currently
+`https://admin.vmjamdocuai.cloud`). `WEB_REMEMBER_LOGIN_ENABLED` controls whether the API will issue
+a persistent cookie. `ADMIN_REMEMBER_LOGIN_TTL_DAYS` defaults to 30 days; without **Remember me**,
+the cookie is browser-session scoped and its server credential expires after
+`ADMIN_BROWSER_SESSION_TTL_HOURS` (24 by default). The original `/auth/*` token-body endpoints remain
+available for Tauri clients.
+
 ## Implemented Endpoints
 
 ```text
 POST   /api/v1/auth/login
 POST   /api/v1/auth/refresh
 POST   /api/v1/auth/logout
+POST   /api/v1/auth/web/login
+POST   /api/v1/auth/web/refresh
+POST   /api/v1/auth/web/logout
 GET    /api/v1/auth/me
 
 GET    /api/v1/clients

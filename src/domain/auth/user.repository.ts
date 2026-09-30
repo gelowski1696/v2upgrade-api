@@ -7,10 +7,26 @@ export interface UserRepository {
   findById(id: string): Promise<UserAccount | null>;
   markLogin(id: string): Promise<void>;
   createRefreshSession(input: {
+    id: string;
     userId: string;
     tokenHash: string;
+    tokenFamilyId: string;
+    browserSession: boolean;
+    persistent: boolean;
     expiresAt: Date;
   }): Promise<RefreshSessionRecord>;
   findRefreshSession(id: string): Promise<RefreshSessionRecord | null>;
-  revokeRefreshSession(id: string): Promise<void>;
+  rotateRefreshSession(input: {
+    currentId: string;
+    replacementId: string;
+    userId: string;
+    tokenHash: string;
+    tokenFamilyId: string;
+    browserSession: boolean;
+    persistent: boolean;
+    expiresAt: Date;
+    now: Date;
+  }): Promise<RefreshSessionRecord | null>;
+  revokeRefreshSession(id: string, reason: string): Promise<void>;
+  revokeRefreshFamily(tokenFamilyId: string, reason: string): Promise<number>;
 }

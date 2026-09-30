@@ -165,15 +165,22 @@ model User {
 }
 
 model RefreshSession {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @map("user_id") @db.Uuid
-  tokenHash String    @map("token_hash") @db.VarChar(255)
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  tokenHash           String    @map("token_hash") @db.VarChar(255)
+  tokenFamilyId       String    @default(uuid()) @map("token_family_id") @db.Uuid
+  replacedBySessionId String?   @map("replaced_by_session_id") @db.Uuid
+  revokedReason       String?   @map("revoked_reason") @db.VarChar(40)
+  browserSession      Boolean   @default(false) @map("browser_session")
+  persistent          Boolean   @default(false)
+  lastUsedAt          DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt           DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
+  @@index([tokenFamilyId, revokedAt])
   @@map("refresh_sessions")
 }
 

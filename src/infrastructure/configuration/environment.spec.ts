@@ -16,6 +16,9 @@ describe('validateEnvironment', () => {
       PORT: 3100,
       ACCESS_TOKEN_TTL: '15m',
       REFRESH_TOKEN_TTL_DAYS: 30,
+      ADMIN_REMEMBER_LOGIN_TTL_DAYS: 30,
+      ADMIN_BROWSER_SESSION_TTL_HOURS: 24,
+      ADMIN_REFRESH_REUSE_GRACE_SECONDS: 5,
       LICENSE_LEASE_DAYS: 7,
       PORTAL_PASSWORD_RESET_TTL_MINUTES: 60,
       PORTAL_REFRESH_REUSE_GRACE_SECONDS: 5,
@@ -24,6 +27,7 @@ describe('validateEnvironment', () => {
       OWNER_WEB_ANALYTICS_ENABLED: true,
       OWNER_REAL_USER_MONITORING_ENABLED: true,
       ADMIN_WEB_ANALYTICS_VIEW_ENABLED: true,
+      WEB_REMEMBER_LOGIN_ENABLED: true,
     });
   });
 
@@ -107,5 +111,27 @@ describe('validateEnvironment', () => {
         ADMIN_WEB_ANALYTICS_VIEW_ENABLED: 'sometimes',
       }),
     ).toThrow('ADMIN_WEB_ANALYTICS_VIEW_ENABLED must be true or false.');
+  });
+
+  it('validates the browser remember-login switch and durations', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        WEB_REMEMBER_LOGIN_ENABLED: 'false',
+        ADMIN_REMEMBER_LOGIN_TTL_DAYS: '14',
+        ADMIN_BROWSER_SESSION_TTL_HOURS: '12',
+      }),
+    ).toMatchObject({
+      WEB_REMEMBER_LOGIN_ENABLED: false,
+      ADMIN_REMEMBER_LOGIN_TTL_DAYS: 14,
+      ADMIN_BROWSER_SESSION_TTL_HOURS: 12,
+    });
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        ADMIN_REMEMBER_LOGIN_TTL_DAYS: 0,
+      }),
+    ).toThrow('ADMIN_REMEMBER_LOGIN_TTL_DAYS must be an integer from 1 to 90.');
   });
 });

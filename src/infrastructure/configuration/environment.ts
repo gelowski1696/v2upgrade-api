@@ -79,6 +79,45 @@ export function validateEnvironment(config: Environment): Environment {
     config.PORTAL_REFRESH_REUSE_GRACE_SECONDS,
     5,
   );
+  const adminRememberLoginDays = numberValue(
+    config.ADMIN_REMEMBER_LOGIN_TTL_DAYS,
+    30,
+  );
+  if (
+    !Number.isInteger(adminRememberLoginDays) ||
+    adminRememberLoginDays < 1 ||
+    adminRememberLoginDays > 90
+  ) {
+    throw new Error(
+      'ADMIN_REMEMBER_LOGIN_TTL_DAYS must be an integer from 1 to 90.',
+    );
+  }
+  const adminBrowserSessionHours = numberValue(
+    config.ADMIN_BROWSER_SESSION_TTL_HOURS,
+    24,
+  );
+  if (
+    !Number.isInteger(adminBrowserSessionHours) ||
+    adminBrowserSessionHours < 1 ||
+    adminBrowserSessionHours > 168
+  ) {
+    throw new Error(
+      'ADMIN_BROWSER_SESSION_TTL_HOURS must be an integer from 1 to 168.',
+    );
+  }
+  const adminRefreshReuseGraceSeconds = numberValue(
+    config.ADMIN_REFRESH_REUSE_GRACE_SECONDS,
+    5,
+  );
+  if (
+    !Number.isInteger(adminRefreshReuseGraceSeconds) ||
+    adminRefreshReuseGraceSeconds < 1 ||
+    adminRefreshReuseGraceSeconds > 30
+  ) {
+    throw new Error(
+      'ADMIN_REFRESH_REUSE_GRACE_SECONDS must be an integer from 1 to 30.',
+    );
+  }
   const webAnalyticsRetentionDays = numberValue(
     config.WEB_ANALYTICS_RETENTION_DAYS,
     90,
@@ -107,6 +146,9 @@ export function validateEnvironment(config: Environment): Environment {
     PORT: port,
     ACCESS_TOKEN_TTL: stringValue(config.ACCESS_TOKEN_TTL, '15m'),
     REFRESH_TOKEN_TTL_DAYS: numberValue(config.REFRESH_TOKEN_TTL_DAYS, 30),
+    ADMIN_REMEMBER_LOGIN_TTL_DAYS: adminRememberLoginDays,
+    ADMIN_BROWSER_SESSION_TTL_HOURS: adminBrowserSessionHours,
+    ADMIN_REFRESH_REUSE_GRACE_SECONDS: adminRefreshReuseGraceSeconds,
     LICENSE_LEASE_DAYS: numberValue(config.LICENSE_LEASE_DAYS, 7),
     DEVICE_TOKEN_TTL: stringValue(config.DEVICE_TOKEN_TTL, '12h'),
     PORTAL_ACCESS_TOKEN_TTL: stringValue(config.PORTAL_ACCESS_TOKEN_TTL, '15m'),
@@ -152,6 +194,11 @@ export function validateEnvironment(config: Environment): Environment {
       config.ADMIN_WEB_ANALYTICS_VIEW_ENABLED,
       true,
       'ADMIN_WEB_ANALYTICS_VIEW_ENABLED',
+    ),
+    WEB_REMEMBER_LOGIN_ENABLED: booleanValue(
+      config.WEB_REMEMBER_LOGIN_ENABLED,
+      true,
+      'WEB_REMEMBER_LOGIN_ENABLED',
     ),
   };
 }
