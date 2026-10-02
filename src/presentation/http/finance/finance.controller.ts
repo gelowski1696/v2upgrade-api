@@ -42,6 +42,11 @@ export class FinanceController {
     return this.finance.expenses(query);
   }
 
+  @Get('payments')
+  payments(@Query() query: FinanceListQueryDto) {
+    return this.finance.payments(query);
+  }
+
   @Post('payments')
   createPayment(
     @Body() input: CreatePaymentDto,

@@ -104,10 +104,10 @@ export class RenewSubscriptionDto extends SubscriptionActionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsISO8601()
-  startsAt?: string;
+  periodStartsAt?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsISO8601()
-  expiresAt?: string;
+  periodEndsAt?: string;
 }

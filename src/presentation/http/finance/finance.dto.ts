@@ -22,6 +22,15 @@ export const expenseCategories = [
   'OTHER',
 ] as const;
 
+export const paymentPurposes = [
+  'INITIAL',
+  'RENEWAL',
+  'MODIFICATION',
+  'OTHER',
+] as const;
+
+export const paymentStatuses = ['POSTED', 'VOIDED'] as const;
+
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const amountPattern = /^\d{1,10}(\.\d{1,2})?$/;
 const currencyPattern = /^[A-Z]{3}$/;
@@ -41,6 +50,21 @@ export class FinanceRangeQueryDto {
   @IsOptional()
   @Matches(currencyPattern)
   currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  clientId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+
+  @ApiPropertyOptional({ enum: paymentPurposes })
+  @IsOptional()
+  @IsIn(paymentPurposes)
+  purpose?: (typeof paymentPurposes)[number];
 }
 
 export class FinanceListQueryDto extends PageQueryDto {
@@ -58,12 +82,52 @@ export class FinanceListQueryDto extends PageQueryDto {
   @IsOptional()
   @Matches(currencyPattern)
   currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  clientId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+
+  @ApiPropertyOptional({ enum: paymentPurposes })
+  @IsOptional()
+  @IsIn(paymentPurposes)
+  purpose?: (typeof paymentPurposes)[number];
+
+  @ApiPropertyOptional({ enum: paymentStatuses })
+  @IsOptional()
+  @IsIn(paymentStatuses)
+  status?: (typeof paymentStatuses)[number];
 }
 
 export class CreatePaymentDto {
   @ApiProperty()
   @IsUUID()
-  subscriptionId!: string;
+  clientId!: string;
+
+  @ApiProperty({ enum: paymentPurposes })
+  @IsIn(paymentPurposes)
+  purpose!: (typeof paymentPurposes)[number];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  subscriptionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  renewalId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  description?: string;
 
   @ApiProperty({ example: '1499.00' })
   @IsString()

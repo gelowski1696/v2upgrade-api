@@ -7,6 +7,8 @@ import type {
   SubscriptionEventRecord,
   SubscriptionRecord,
   SubscriptionRepository,
+  SubscriptionRenewalRecord,
+  SubscriptionRenewalResult,
   SubscriptionStatus,
 } from '../../domain/subscriptions/subscription.repository.js';
 import { ConflictError } from '../../domain/shared/errors.js';
@@ -239,7 +241,10 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
         },
       });
       if (result.count !== 1) {
-        throw new Error('SUBSCRIPTION_CONCURRENT_CHANGE');
+        throw new ConflictError(
+          'The subscription changed while this action was being completed. Refresh and try again.',
+          'SUBSCRIPTION_CONCURRENT_CHANGE',
+        );
       }
       await transaction.subscriptionEvent.create({
         data: { subscriptionId: id, fromStatus, toStatus, reason, actorId },
@@ -251,27 +256,48 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
   async renew(
     id: string,
     fromStatus: SubscriptionStatus,
-    startsAt: Date,
-    expiresAt: Date,
+    previousExpiresAt: Date | null,
+    periodStartsAt: Date,
+    periodEndsAt: Date,
     actorId: string,
+    snapshot: {
+      amount: string;
+      currency: string;
+      billingInterval: SubscriptionRecord['billingInterval'];
+    },
     reason?: string,
-  ): Promise<SubscriptionRecord> {
-    await this.prisma.$transaction(async (transaction) => {
+  ): Promise<SubscriptionRenewalResult> {
+    const renewal = await this.prisma.$transaction(async (transaction) => {
       const result = await transaction.subscription.updateMany({
-        where: { id, status: fromStatus },
+        where: { id, status: fromStatus, expiresAt: previousExpiresAt },
         data: {
           status: 'ACTIVE',
-          startsAt,
-          renewsAt: expiresAt,
-          expiresAt,
+          renewsAt: periodEndsAt,
+          expiresAt: periodEndsAt,
           graceEndsAt: null,
           suspendedAt: null,
           cancelledAt: null,
         },
       });
       if (result.count !== 1) {
-        throw new Error('SUBSCRIPTION_CONCURRENT_CHANGE');
+        throw new ConflictError(
+          'The subscription was already renewed or changed. Refresh and review its current expiry.',
+          'SUBSCRIPTION_CONCURRENT_CHANGE',
+        );
       }
+      const created = await transaction.subscriptionRenewal.create({
+        data: {
+          subscriptionId: id,
+          previousExpiresAt,
+          periodStartsAt,
+          periodEndsAt,
+          amount: snapshot.amount,
+          currency: snapshot.currency,
+          billingInterval: snapshot.billingInterval,
+          reason,
+          createdById: actorId,
+        },
+      });
       await transaction.subscriptionEvent.create({
         data: {
           subscriptionId: id,
@@ -279,11 +305,21 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
           toStatus: 'ACTIVE',
           reason: reason ?? 'Subscription renewed',
           actorId,
-          metadata: { startsAt, expiresAt },
+          metadata: {
+            originalStartsAtPreserved: true,
+            previousExpiresAt,
+            periodStartsAt,
+            periodEndsAt,
+            renewalId: created.id,
+          },
         },
       });
+      return created;
     });
-    return (await this.findById(id)) as SubscriptionRecord;
+    return {
+      subscription: (await this.findById(id)) as SubscriptionRecord,
+      renewal: this.mapRenewal(renewal),
+    };
   }
 
   async events(id: string): Promise<SubscriptionEventRecord[]> {
@@ -300,6 +336,14 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async renewals(id: string): Promise<SubscriptionRenewalRecord[]> {
+    const rows = await this.prisma.subscriptionRenewal.findMany({
+      where: { subscriptionId: id },
+      orderBy: [{ periodStartsAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    return rows.map((row) => this.mapRenewal(row));
   }
 
   async softDelete(
@@ -349,6 +393,22 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       entitlements: subscription.entitlements as Record<string, unknown>,
       device: devices[0] ?? null,
     };
+  }
+
+  private mapRenewal(renewal: {
+    id: string;
+    subscriptionId: string;
+    previousExpiresAt: Date | null;
+    periodStartsAt: Date;
+    periodEndsAt: Date;
+    amount: { toFixed(digits: number): string };
+    currency: string;
+    billingInterval: SubscriptionRecord['billingInterval'];
+    reason: string | null;
+    createdById: string;
+    createdAt: Date;
+  }): SubscriptionRenewalRecord {
+    return { ...renewal, amount: renewal.amount.toFixed(2) };
   }
 
   private rethrowDeviceConflict(error: unknown): never {

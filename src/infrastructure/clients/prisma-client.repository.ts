@@ -16,10 +16,15 @@ export class PrismaClientRepository implements ClientRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(
-    query: PageQuery & { status?: ClientStatus },
+    query: PageQuery & { status?: ClientStatus; groupId?: string },
   ): Promise<Page<ClientRecord>> {
     const where: Prisma.ClientWhereInput = {
       status: query.status,
+      ...(query.groupId === 'ungrouped'
+        ? { groupId: null }
+        : query.groupId
+          ? { groupId: query.groupId }
+          : {}),
       ...(query.search
         ? {
             OR: [
@@ -34,6 +39,9 @@ export class PrismaClientRepository implements ClientRepository {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.client.findMany({
         where,
+        include: {
+          group: { select: { id: true, code: true, name: true, status: true } },
+        },
         orderBy: { businessName: 'asc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
@@ -44,11 +52,21 @@ export class PrismaClientRepository implements ClientRepository {
   }
 
   findById(id: string): Promise<ClientRecord | null> {
-    return this.prisma.client.findUnique({ where: { id } });
+    return this.prisma.client.findUnique({
+      where: { id },
+      include: {
+        group: { select: { id: true, code: true, name: true, status: true } },
+      },
+    });
   }
 
   findByCode(code: string): Promise<ClientRecord | null> {
-    return this.prisma.client.findUnique({ where: { code } });
+    return this.prisma.client.findUnique({
+      where: { code },
+      include: {
+        group: { select: { id: true, code: true, name: true, status: true } },
+      },
+    });
   }
 
   create(input: CreateClientInput): Promise<ClientRecord> {
@@ -63,10 +81,19 @@ export class PrismaClientRepository implements ClientRepository {
           },
         },
       },
+      include: {
+        group: { select: { id: true, code: true, name: true, status: true } },
+      },
     });
   }
 
   update(id: string, input: UpdateClientInput): Promise<ClientRecord> {
-    return this.prisma.client.update({ where: { id }, data: input });
+    return this.prisma.client.update({
+      where: { id },
+      data: input,
+      include: {
+        group: { select: { id: true, code: true, name: true, status: true } },
+      },
+    });
   }
 }

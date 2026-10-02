@@ -41,6 +41,7 @@ describe('SubscriptionsService', () => {
     renew: jest.fn(),
     softDelete: jest.fn(),
     events: jest.fn(),
+    renewals: jest.fn(),
   };
   const audit: jest.Mocked<AuditWriter> = { record: jest.fn() };
   const jwt = {
@@ -376,6 +377,85 @@ describe('SubscriptionsService', () => {
     expect(recorded?.resourceId).toBe('subscription-id');
     expect(recorded?.metadata?.['previousStatus']).toBe('ACTIVE');
     expect(recorded?.metadata?.['deviceId']).toBe('POS-DEVICE-0001');
+  });
+
+  it('extends coverage without replacing the original subscription start', async () => {
+    const originalStart = new Date('2026-10-02T00:00:00.000Z');
+    const currentExpiry = new Date('2099-11-02T00:00:00.000Z');
+    const current = subscriptionRecord({
+      status: 'ACTIVE',
+      startsAt: originalStart,
+      renewsAt: currentExpiry,
+      expiresAt: currentExpiry,
+    });
+    const periodEnd = new Date('2099-12-02T00:00:00.000Z');
+    subscriptions.findById.mockResolvedValue(current);
+    subscriptions.renew.mockResolvedValue({
+      subscription: {
+        ...current,
+        startsAt: originalStart,
+        renewsAt: periodEnd,
+        expiresAt: periodEnd,
+      },
+      renewal: {
+        id: 'renewal-id',
+        subscriptionId: current.id,
+        previousExpiresAt: currentExpiry,
+        periodStartsAt: currentExpiry,
+        periodEndsAt: periodEnd,
+        amount: current.amount,
+        currency: current.currency,
+        billingInterval: current.billingInterval,
+        reason: null,
+        createdById: 'actor-id',
+        createdAt: new Date(),
+      },
+    });
+
+    const result = await service.renew(current.id, 'actor-id', {});
+
+    expect(subscriptions.renew.mock.calls[0]).toEqual([
+      current.id,
+      'ACTIVE',
+      currentExpiry,
+      currentExpiry,
+      periodEnd,
+      'actor-id',
+      {
+        amount: '1499.00',
+        currency: 'PHP',
+        billingInterval: 'MONTHLY',
+      },
+      undefined,
+    ]);
+    expect(result.subscription.startsAt).toEqual(originalStart);
+    expect(result.renewal.periodStartsAt).toEqual(currentExpiry);
+    const recorded = audit.record.mock.calls[0]?.[0];
+    expect(recorded?.action).toBe('subscription.renewed');
+    expect(recorded?.metadata?.['originalStartsAt']).toEqual(originalStart);
+  });
+
+  it('requires administrator authority and a reason for renewal date overrides', async () => {
+    const current = subscriptionRecord({
+      status: 'ACTIVE',
+      expiresAt: new Date('2099-11-02T00:00:00.000Z'),
+    });
+    subscriptions.findById.mockResolvedValue(current);
+
+    await expect(
+      service.renew(current.id, 'operator-id', {
+        periodStartsAt: '2099-11-03T00:00:00.000Z',
+      }),
+    ).rejects.toBeInstanceOf(InvalidOperationError);
+    await expect(
+      service.renew(
+        current.id,
+        'admin-id',
+        { periodStartsAt: '2099-11-03T00:00:00.000Z' },
+        true,
+      ),
+    ).rejects.toBeInstanceOf(InvalidOperationError);
+    expect(subscriptions.renew.mock.calls).toHaveLength(0);
   });
 });
 

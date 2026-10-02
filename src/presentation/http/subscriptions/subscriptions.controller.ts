@@ -49,6 +49,11 @@ export class SubscriptionsController {
     return this.subscriptions.events(id);
   }
 
+  @Get(':id/renewals')
+  renewals(@Param('id') id: string) {
+    return this.subscriptions.renewals(id);
+  }
+
   @Post()
   @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
   create(
@@ -135,7 +140,12 @@ export class SubscriptionsController {
     @Body() input: RenewSubscriptionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.subscriptions.renew(id, user.id, input);
+    return this.subscriptions.renew(
+      id,
+      user.id,
+      input,
+      user.role === 'SUPER_ADMIN' || user.role === 'ADMIN',
+    );
   }
 
   @Delete(':id')

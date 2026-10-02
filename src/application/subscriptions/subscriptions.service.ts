@@ -177,7 +177,12 @@ export class SubscriptionsService {
   async renew(
     id: string,
     actorId: string,
-    input: { startsAt?: string; expiresAt?: string; reason?: string },
+    input: {
+      periodStartsAt?: string;
+      periodEndsAt?: string;
+      reason?: string;
+    },
+    allowDateOverride = false,
   ) {
     const current = await this.get(id);
     if (current.status === 'CANCELLED') {
@@ -185,25 +190,43 @@ export class SubscriptionsService {
         'A cancelled subscription cannot be renewed.',
       );
     }
-    const startsAt = input.startsAt
-      ? new Date(input.startsAt)
-      : current.expiresAt && current.expiresAt > new Date()
-        ? current.expiresAt
-        : new Date();
-    const expiresAt = input.expiresAt
-      ? new Date(input.expiresAt)
-      : this.calculateExpiry(startsAt, current.billingInterval);
-    if (!expiresAt || expiresAt <= startsAt) {
+    const now = new Date();
+    const defaultPeriodStart =
+      current.expiresAt && current.expiresAt > now ? current.expiresAt : now;
+    const hasOverride = Boolean(input.periodStartsAt || input.periodEndsAt);
+    if (hasOverride && !allowDateOverride) {
       throw new InvalidOperationError(
-        'Renewal expiration must be after its start date.',
+        'Only an administrator can override renewal dates.',
       );
     }
-    const updated = await this.subscriptions.renew(
+    if (hasOverride && !input.reason?.trim()) {
+      throw new InvalidOperationError(
+        'A reason is required when renewal dates are overridden.',
+      );
+    }
+    const periodStartsAt = input.periodStartsAt
+      ? new Date(input.periodStartsAt)
+      : defaultPeriodStart;
+    const periodEndsAt = input.periodEndsAt
+      ? new Date(input.periodEndsAt)
+      : this.calculateExpiry(periodStartsAt, current.billingInterval);
+    if (!periodEndsAt || periodEndsAt <= periodStartsAt) {
+      throw new InvalidOperationError(
+        'Renewal period end must be after its period start.',
+      );
+    }
+    const result = await this.subscriptions.renew(
       id,
       current.status,
-      startsAt,
-      expiresAt,
+      current.expiresAt,
+      periodStartsAt,
+      periodEndsAt,
       actorId,
+      {
+        amount: current.amount,
+        currency: current.currency,
+        billingInterval: current.billingInterval,
+      },
       input.reason,
     );
     await this.audit.record({
@@ -211,14 +234,25 @@ export class SubscriptionsService {
       action: 'subscription.renewed',
       resourceType: 'subscription',
       resourceId: id,
-      metadata: { startsAt, expiresAt },
+      metadata: {
+        renewalId: result.renewal.id,
+        originalStartsAt: current.startsAt,
+        previousExpiresAt: current.expiresAt,
+        periodStartsAt,
+        periodEndsAt,
+      },
     });
-    return updated;
+    return result;
   }
 
   async events(id: string) {
     await this.get(id);
     return this.subscriptions.events(id);
+  }
+
+  async renewals(id: string) {
+    await this.get(id);
+    return this.subscriptions.renewals(id);
   }
 
   async delete(id: string, actorId: string) {

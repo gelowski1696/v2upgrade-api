@@ -5,6 +5,9 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
+  IsArray,
+  Matches,
   MaxLength,
 } from 'class-validator';
 import type { ClientStatus } from '../../../domain/clients/client.repository.js';
@@ -21,6 +24,14 @@ export class ClientPageQueryDto extends PageQueryDto {
   @IsOptional()
   @IsEnum(clientStatuses)
   status?: ClientStatus;
+
+  @ApiPropertyOptional({ description: 'Client group UUID or "ungrouped"' })
+  @IsOptional()
+  @IsString()
+  @Matches(
+    /^(ungrouped|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i,
+  )
+  groupId?: string;
 }
 
 export class CreateClientDto {
@@ -63,6 +74,11 @@ export class CreateClientDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
 }
 
 export class UpdateClientDto {
@@ -105,4 +121,23 @@ export class UpdateClientDto {
   @IsOptional()
   @IsEnum(clientStatuses)
   status?: ClientStatus;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string | null;
+}
+
+export class AssignClientGroupDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsUUID()
+  groupId?: string | null;
+}
+
+export class BulkAssignClientGroupDto extends AssignClientGroupDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  clientIds!: string[];
 }

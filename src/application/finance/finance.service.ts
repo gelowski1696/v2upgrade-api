@@ -28,25 +28,35 @@ export class FinanceService {
     const range = this.range(query);
     const [payments, expenses] = await Promise.all([
       this.prisma.paymentRecord.findMany({
-        where: {
-          currency: range.currency,
-          paidAt: { gte: range.fromDate, lt: range.toExclusive },
-        },
+        where: this.paymentWhere(query, range),
         orderBy: { paidAt: 'desc' },
         select: {
           id: true,
+          subscriptionId: true,
+          renewalId: true,
           amount: true,
           currency: true,
           reference: true,
           paidAt: true,
           notes: true,
+          purpose: true,
+          description: true,
           status: true,
           voidedAt: true,
           voidReason: true,
+          client: {
+            select: {
+              id: true,
+              businessName: true,
+              group: { select: { id: true, code: true, name: true } },
+            },
+          },
+          renewal: {
+            select: { id: true, periodStartsAt: true, periodEndsAt: true },
+          },
           subscription: {
             select: {
               id: true,
-              client: { select: { id: true, businessName: true } },
               planVersion: {
                 select: { plan: { select: { id: true, name: true } } },
               },
@@ -83,6 +93,10 @@ export class FinanceService {
       string,
       { planId: string; planName: string; revenue: number; payments: number }
     >();
+    const byPurpose = new Map<
+      string,
+      { purpose: string; revenue: number; payments: number }
+    >();
     let revenue = 0;
     for (const payment of postedPayments) {
       const amount = Number(payment.amount);
@@ -90,16 +104,26 @@ export class FinanceService {
       const day = payment.paidAt.toISOString().slice(0, 10);
       const dailyRow = daily.get(day);
       if (dailyRow) dailyRow.revenue += amount;
-      const plan = payment.subscription.planVersion.plan;
-      const planRow = byPlan.get(plan.id) ?? {
-        planId: plan.id,
-        planName: plan.name,
+      const plan = payment.subscription?.planVersion.plan;
+      if (plan) {
+        const planRow = byPlan.get(plan.id) ?? {
+          planId: plan.id,
+          planName: plan.name,
+          revenue: 0,
+          payments: 0,
+        };
+        planRow.revenue += amount;
+        planRow.payments += 1;
+        byPlan.set(plan.id, planRow);
+      }
+      const purposeRow = byPurpose.get(payment.purpose) ?? {
+        purpose: payment.purpose,
         revenue: 0,
         payments: 0,
       };
-      planRow.revenue += amount;
-      planRow.payments += 1;
-      byPlan.set(plan.id, planRow);
+      purposeRow.revenue += amount;
+      purposeRow.payments += 1;
+      byPurpose.set(payment.purpose, purposeRow);
     }
 
     let expenseTotal = 0;
@@ -136,20 +160,66 @@ export class FinanceService {
       byPlan: [...byPlan.values()]
         .map((row) => ({ ...row, revenue: this.money(row.revenue) }))
         .sort((left, right) => right.revenue - left.revenue),
-      recentPayments: payments.slice(0, 10).map((payment) => ({
-        id: payment.id,
-        subscriptionId: payment.subscription.id,
-        amount: payment.amount.toFixed(2),
-        currency: payment.currency,
-        reference: payment.reference,
-        paidAt: payment.paidAt,
-        notes: payment.notes,
-        status: payment.status,
-        voidedAt: payment.voidedAt,
-        voidReason: payment.voidReason,
-        client: payment.subscription.client,
-        plan: payment.subscription.planVersion.plan,
-      })),
+      byPurpose: [...byPurpose.values()]
+        .map((row) => ({ ...row, revenue: this.money(row.revenue) }))
+        .sort((left, right) => right.revenue - left.revenue),
+      recentPayments: payments
+        .slice(0, 10)
+        .map((payment) => this.paymentRecord(payment)),
+    };
+  }
+
+  async payments(query: FinanceListQueryDto) {
+    const range = this.range(query);
+    const where = this.paymentWhere(query, range);
+    const [items, total] = await Promise.all([
+      this.prisma.paymentRecord.findMany({
+        where,
+        orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        select: {
+          id: true,
+          subscriptionId: true,
+          renewalId: true,
+          purpose: true,
+          description: true,
+          amount: true,
+          currency: true,
+          reference: true,
+          paidAt: true,
+          notes: true,
+          status: true,
+          voidedAt: true,
+          voidReason: true,
+          client: {
+            select: {
+              id: true,
+              businessName: true,
+              group: { select: { id: true, code: true, name: true } },
+            },
+          },
+          renewal: {
+            select: { id: true, periodStartsAt: true, periodEndsAt: true },
+          },
+          subscription: {
+            select: {
+              id: true,
+              planVersion: {
+                select: { plan: { select: { id: true, name: true } } },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.paymentRecord.count({ where }),
+    ]);
+    return {
+      items: items.map((payment) => this.paymentRecord(payment)),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
     };
   }
 
@@ -192,22 +262,64 @@ export class FinanceService {
 
   async createPayment(input: CreatePaymentDto, actorId: string) {
     this.positiveAmount(input.amount);
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: input.subscriptionId },
-      select: { id: true, currency: true, deletedAt: true },
+    const client = await this.prisma.client.findUnique({
+      where: { id: input.clientId },
+      select: { id: true },
     });
-    if (!subscription || subscription.deletedAt) {
+    if (!client) throw new NotFoundException('Client not found.');
+    const subscription = input.subscriptionId
+      ? await this.prisma.subscription.findUnique({
+          where: { id: input.subscriptionId },
+          select: { id: true, clientId: true, currency: true, deletedAt: true },
+        })
+      : null;
+    if (input.subscriptionId && (!subscription || subscription.deletedAt)) {
       throw new NotFoundException('Subscription not found.');
     }
-    const currency = input.currency ?? subscription.currency;
-    if (currency !== subscription.currency) {
+    if (subscription && subscription.clientId !== client.id) {
+      throw new BadRequestException(
+        'The selected subscription does not belong to this client.',
+      );
+    }
+    if (input.purpose === 'RENEWAL' && !subscription) {
+      throw new BadRequestException('Renewal payments require a subscription.');
+    }
+    const description = this.optional(input.description);
+    if (
+      (input.purpose === 'MODIFICATION' || input.purpose === 'OTHER') &&
+      !description
+    ) {
+      throw new BadRequestException(
+        'Modification and other payments require a description.',
+      );
+    }
+    const renewal = input.renewalId
+      ? await this.prisma.subscriptionRenewal.findUnique({
+          where: { id: input.renewalId },
+          select: { id: true, subscriptionId: true },
+        })
+      : null;
+    if (input.renewalId && !renewal) {
+      throw new NotFoundException('Subscription renewal not found.');
+    }
+    if (renewal && renewal.subscriptionId !== subscription?.id) {
+      throw new BadRequestException(
+        'The selected renewal does not belong to this subscription.',
+      );
+    }
+    const currency = input.currency ?? subscription?.currency ?? 'PHP';
+    if (subscription && currency !== subscription.currency) {
       throw new BadRequestException(
         `Payment currency must be ${subscription.currency}.`,
       );
     }
     const payment = await this.prisma.paymentRecord.create({
       data: {
-        subscriptionId: subscription.id,
+        clientId: client.id,
+        subscriptionId: subscription?.id,
+        renewalId: renewal?.id,
+        purpose: input.purpose,
+        description,
         amount: input.amount,
         currency,
         paidAt: new Date(input.paidAt),
@@ -222,7 +334,10 @@ export class FinanceService {
       resourceType: 'payment_record',
       resourceId: payment.id,
       metadata: {
-        subscriptionId: subscription.id,
+        clientId: client.id,
+        subscriptionId: subscription?.id,
+        renewalId: renewal?.id,
+        purpose: input.purpose,
         amount: input.amount,
         currency,
       },
@@ -273,6 +388,7 @@ export class FinanceService {
       where: { id },
       select: {
         id: true,
+        clientId: true,
         subscriptionId: true,
         amount: true,
         currency: true,
@@ -305,6 +421,7 @@ export class FinanceService {
       resourceId: id,
       metadata: {
         subscriptionId: payment.subscriptionId,
+        clientId: payment.clientId,
         amount: payment.amount.toFixed(2),
         currency: payment.currency,
         reason: voidReason,
@@ -363,6 +480,89 @@ export class FinanceService {
       fromDate,
       toExclusive,
       currency: query.currency ?? 'PHP',
+    };
+  }
+
+  private paymentWhere(
+    query: FinanceRangeQueryDto | FinanceListQueryDto,
+    range: ReturnType<FinanceService['range']>,
+  ) {
+    const search = 'search' in query ? query.search?.trim() : undefined;
+    const status = 'status' in query ? query.status : undefined;
+    return {
+      currency: range.currency,
+      paidAt: { gte: range.fromDate, lt: range.toExclusive },
+      clientId: query.clientId,
+      purpose: query.purpose,
+      status,
+      client: query.groupId ? { groupId: query.groupId } : undefined,
+      ...(search
+        ? {
+            OR: [
+              {
+                description: { contains: search, mode: 'insensitive' as const },
+              },
+              { reference: { contains: search, mode: 'insensitive' as const } },
+              {
+                client: {
+                  businessName: {
+                    contains: search,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+  }
+
+  private paymentRecord(payment: {
+    id: string;
+    subscriptionId?: string | null;
+    renewalId?: string | null;
+    purpose: string;
+    description: string | null;
+    amount: { toFixed(digits: number): string };
+    currency: string;
+    reference: string | null;
+    paidAt: Date;
+    notes: string | null;
+    status: string;
+    voidedAt: Date | null;
+    voidReason: string | null;
+    client: {
+      id: string;
+      businessName: string;
+      group: { id: string; code: string; name: string } | null;
+    };
+    subscription: {
+      id: string;
+      planVersion: { plan: { id: string; name: string } };
+    } | null;
+    renewal: {
+      id: string;
+      periodStartsAt: Date;
+      periodEndsAt: Date;
+    } | null;
+  }) {
+    return {
+      id: payment.id,
+      subscriptionId: payment.subscriptionId ?? null,
+      renewalId: payment.renewalId ?? null,
+      purpose: payment.purpose,
+      description: payment.description,
+      amount: payment.amount.toFixed(2),
+      currency: payment.currency,
+      reference: payment.reference,
+      paidAt: payment.paidAt,
+      notes: payment.notes,
+      status: payment.status,
+      voidedAt: payment.voidedAt,
+      voidReason: payment.voidReason,
+      client: payment.client,
+      plan: payment.subscription?.planVersion.plan ?? null,
+      renewal: payment.renewal,
     };
   }
 

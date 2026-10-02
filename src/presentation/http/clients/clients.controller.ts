@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ClientsService } from '../../../application/clients/clients.service.js';
+import { ClientGroupsService } from '../../../application/clients/client-groups.service.js';
 import type { AuthenticatedUser } from '../../../domain/auth/auth.types.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -19,6 +20,8 @@ import {
   ClientPageQueryDto,
   CreateClientDto,
   UpdateClientDto,
+  AssignClientGroupDto,
+  BulkAssignClientGroupDto,
 } from './clients.dto.js';
 
 @ApiTags('Clients')
@@ -26,7 +29,10 @@ import {
 @Controller('clients')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ClientsController {
-  constructor(private readonly clients: ClientsService) {}
+  constructor(
+    private readonly clients: ClientsService,
+    private readonly groups: ClientGroupsService,
+  ) {}
 
   @Get()
   list(@Query() query: ClientPageQueryDto) {
@@ -55,6 +61,25 @@ export class ClientsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.clients.update(id, input, user.id);
+  }
+
+  @Patch(':id/group')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
+  assignGroup(
+    @Param('id') id: string,
+    @Body() input: AssignClientGroupDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.groups.assign([id], input.groupId ?? null, user.id);
+  }
+
+  @Post('bulk-group')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
+  bulkAssignGroup(
+    @Body() input: BulkAssignClientGroupDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.groups.assign(input.clientIds, input.groupId ?? null, user.id);
   }
 
   @Post(':id/archive')

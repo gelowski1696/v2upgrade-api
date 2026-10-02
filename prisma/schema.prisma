@@ -44,6 +44,18 @@ enum PaymentStatus {
   VOIDED
 }
 
+enum PaymentPurpose {
+  INITIAL
+  RENEWAL
+  MODIFICATION
+  OTHER
+}
+
+enum ClientGroupStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 enum SubscriptionStatus {
   DRAFT
   TRIAL
@@ -150,22 +162,24 @@ enum WebVitalName {
 }
 
 model User {
-  id                   String              @id @default(uuid()) @db.Uuid
-  username             String              @unique @db.VarChar(80)
-  displayName          String              @map("display_name") @db.VarChar(160)
-  passwordHash         String              @map("password_hash") @db.VarChar(255)
-  role                 UserRole            @default(OPERATOR)
-  status               UserStatus          @default(ACTIVE)
-  lastLoginAt          DateTime?           @map("last_login_at") @db.Timestamptz(3)
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                   String                @id @default(uuid()) @db.Uuid
+  username             String                @unique @db.VarChar(80)
+  displayName          String                @map("display_name") @db.VarChar(160)
+  passwordHash         String                @map("password_hash") @db.VarChar(255)
+  role                 UserRole              @default(OPERATOR)
+  status               UserStatus            @default(ACTIVE)
+  lastLoginAt          DateTime?             @map("last_login_at") @db.Timestamptz(3)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
   refreshSessions      RefreshSession[]
-  createdSubscriptions Subscription[]      @relation("SubscriptionCreatedBy")
-  deletedSubscriptions Subscription[]      @relation("SubscriptionDeletedBy")
-  subscriptionEvents   SubscriptionEvent[] @relation("SubscriptionEventActor")
-  paymentRecords       PaymentRecord[]     @relation("PaymentCreatedBy")
-  voidedPayments       PaymentRecord[]     @relation("PaymentVoidedBy")
-  expensesCreated      Expense[]           @relation("ExpenseCreatedBy")
+  createdSubscriptions Subscription[]        @relation("SubscriptionCreatedBy")
+  deletedSubscriptions Subscription[]        @relation("SubscriptionDeletedBy")
+  subscriptionEvents   SubscriptionEvent[]   @relation("SubscriptionEventActor")
+  paymentRecords       PaymentRecord[]       @relation("PaymentCreatedBy")
+  voidedPayments       PaymentRecord[]       @relation("PaymentVoidedBy")
+  clientGroupsCreated  ClientGroup[]         @relation("ClientGroupCreatedBy")
+  renewalsCreated      SubscriptionRenewal[] @relation("SubscriptionRenewalCreatedBy")
+  expensesCreated      Expense[]             @relation("ExpenseCreatedBy")
   auditLogs            AuditLog[]
 
   @@map("users")
@@ -201,6 +215,7 @@ model Client {
   address             String?
   notes               String?
   status              ClientStatus        @default(ACTIVE)
+  groupId             String?             @map("group_id") @db.Uuid
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   subscriptions       Subscription[]
@@ -210,10 +225,29 @@ model Client {
   invitations         PortalInvitation[]
   webAnalyticsEnabled Boolean             @default(true) @map("web_analytics_enabled")
   webAnalyticsEvents  WebAnalyticsEvent[]
+  group               ClientGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  paymentRecords      PaymentRecord[]
 
   @@index([businessName])
   @@index([status])
+  @@index([groupId, status])
   @@map("clients")
+}
+
+model ClientGroup {
+  id          String            @id @default(uuid()) @db.Uuid
+  code        String            @unique @db.VarChar(40)
+  name        String            @unique @db.VarChar(120)
+  description String?
+  status      ClientGroupStatus @default(ACTIVE)
+  createdById String            @map("created_by_id") @db.Uuid
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy   User              @relation("ClientGroupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  clients     Client[]
+
+  @@index([status, name])
+  @@map("client_groups")
 }
 
 model Store {
@@ -532,40 +566,61 @@ model PlanVersion {
 }
 
 model Subscription {
-  id              String              @id @default(uuid()) @db.Uuid
-  clientId        String              @map("client_id") @db.Uuid
-  planVersionId   String              @map("plan_version_id") @db.Uuid
-  status          SubscriptionStatus  @default(DRAFT)
-  startsAt        DateTime            @map("starts_at") @db.Timestamptz(3)
-  renewsAt        DateTime?           @map("renews_at") @db.Timestamptz(3)
-  expiresAt       DateTime?           @map("expires_at") @db.Timestamptz(3)
-  graceEndsAt     DateTime?           @map("grace_ends_at") @db.Timestamptz(3)
-  suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(3)
-  cancelledAt     DateTime?           @map("cancelled_at") @db.Timestamptz(3)
-  deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(3)
-  deletedById     String?             @map("deleted_by_id") @db.Uuid
-  amount          Decimal             @db.Decimal(12, 2)
-  currency        String              @db.Char(3)
-  billingInterval BillingInterval     @map("billing_interval")
-  maxDevices      Int                 @map("max_devices")
-  entitlements    Json                @default("{}")
+  id              String                @id @default(uuid()) @db.Uuid
+  clientId        String                @map("client_id") @db.Uuid
+  planVersionId   String                @map("plan_version_id") @db.Uuid
+  status          SubscriptionStatus    @default(DRAFT)
+  startsAt        DateTime              @map("starts_at") @db.Timestamptz(3)
+  renewsAt        DateTime?             @map("renews_at") @db.Timestamptz(3)
+  expiresAt       DateTime?             @map("expires_at") @db.Timestamptz(3)
+  graceEndsAt     DateTime?             @map("grace_ends_at") @db.Timestamptz(3)
+  suspendedAt     DateTime?             @map("suspended_at") @db.Timestamptz(3)
+  cancelledAt     DateTime?             @map("cancelled_at") @db.Timestamptz(3)
+  deletedAt       DateTime?             @map("deleted_at") @db.Timestamptz(3)
+  deletedById     String?               @map("deleted_by_id") @db.Uuid
+  amount          Decimal               @db.Decimal(12, 2)
+  currency        String                @db.Char(3)
+  billingInterval BillingInterval       @map("billing_interval")
+  maxDevices      Int                   @map("max_devices")
+  entitlements    Json                  @default("{}")
   notes           String?
-  createdById     String              @map("created_by_id") @db.Uuid
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  client          Client              @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  planVersion     PlanVersion         @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
-  createdBy       User                @relation("SubscriptionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  deletedBy       User?               @relation("SubscriptionDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
+  createdById     String                @map("created_by_id") @db.Uuid
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client          Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  planVersion     PlanVersion           @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  createdBy       User                  @relation("SubscriptionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  deletedBy       User?                 @relation("SubscriptionDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
   events          SubscriptionEvent[]
   devices         Device[]
   licenseLeases   LicenseLease[]
   paymentRecords  PaymentRecord[]
+  renewals        SubscriptionRenewal[]
 
   @@index([clientId, status])
   @@index([status, expiresAt])
   @@index([deletedAt, status, createdAt])
   @@map("subscriptions")
+}
+
+model SubscriptionRenewal {
+  id                String          @id @default(uuid()) @db.Uuid
+  subscriptionId    String          @map("subscription_id") @db.Uuid
+  previousExpiresAt DateTime?       @map("previous_expires_at") @db.Timestamptz(3)
+  periodStartsAt    DateTime        @map("period_starts_at") @db.Timestamptz(3)
+  periodEndsAt      DateTime        @map("period_ends_at") @db.Timestamptz(3)
+  amount            Decimal         @db.Decimal(12, 2)
+  currency          String          @db.Char(3)
+  billingInterval   BillingInterval @map("billing_interval")
+  reason            String?         @db.VarChar(500)
+  createdById       String          @map("created_by_id") @db.Uuid
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  createdBy         User            @relation("SubscriptionRenewalCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  paymentRecords    PaymentRecord[]
+
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_renewals")
 }
 
 model SubscriptionEvent {
@@ -683,24 +738,33 @@ model LicenseLease {
 }
 
 model PaymentRecord {
-  id             String        @id @default(uuid()) @db.Uuid
-  subscriptionId String        @map("subscription_id") @db.Uuid
-  amount         Decimal       @db.Decimal(12, 2)
-  currency       String        @default("PHP") @db.Char(3)
-  reference      String?       @db.VarChar(120)
-  paidAt         DateTime      @map("paid_at") @db.Timestamptz(3)
+  id             String               @id @default(uuid()) @db.Uuid
+  clientId       String               @map("client_id") @db.Uuid
+  subscriptionId String?              @map("subscription_id") @db.Uuid
+  renewalId      String?              @map("renewal_id") @db.Uuid
+  purpose        PaymentPurpose       @default(OTHER)
+  description    String?              @db.VarChar(250)
+  amount         Decimal              @db.Decimal(12, 2)
+  currency       String               @default("PHP") @db.Char(3)
+  reference      String?              @db.VarChar(120)
+  paidAt         DateTime             @map("paid_at") @db.Timestamptz(3)
   notes          String?
-  status         PaymentStatus @default(POSTED)
-  voidedAt       DateTime?     @map("voided_at") @db.Timestamptz(3)
-  voidedById     String?       @map("voided_by_id") @db.Uuid
-  voidReason     String?       @map("void_reason") @db.VarChar(250)
-  createdById    String        @map("created_by_id") @db.Uuid
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
-  createdBy      User          @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  voidedBy       User?         @relation("PaymentVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict)
+  status         PaymentStatus        @default(POSTED)
+  voidedAt       DateTime?            @map("voided_at") @db.Timestamptz(3)
+  voidedById     String?              @map("voided_by_id") @db.Uuid
+  voidReason     String?              @map("void_reason") @db.VarChar(250)
+  createdById    String               @map("created_by_id") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  client         Client               @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  subscription   Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  renewal        SubscriptionRenewal? @relation(fields: [renewalId], references: [id], onDelete: Restrict)
+  createdBy      User                 @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  voidedBy       User?                @relation("PaymentVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict)
 
   @@index([subscriptionId, paidAt])
+  @@index([clientId, paidAt])
+  @@index([renewalId])
+  @@index([purpose, paidAt, currency])
   @@index([paidAt, currency])
   @@index([status, paidAt, currency])
   @@map("payment_records")

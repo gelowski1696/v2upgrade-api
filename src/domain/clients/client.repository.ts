@@ -1,6 +1,14 @@
 import type { Page, PageQuery } from '../shared/page.js';
 
 export type ClientStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+export type ClientGroupStatus = 'ACTIVE' | 'ARCHIVED';
+
+export interface ClientGroupSummary {
+  id: string;
+  code: string;
+  name: string;
+  status: ClientGroupStatus;
+}
 
 export interface ClientRecord {
   id: string;
@@ -12,6 +20,8 @@ export interface ClientRecord {
   address: string | null;
   notes: string | null;
   status: ClientStatus;
+  groupId: string | null;
+  group: ClientGroupSummary | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +34,7 @@ export interface CreateClientInput {
   phone?: string;
   address?: string;
   notes?: string;
+  groupId?: string;
 }
 
 export interface UpdateClientInput {
@@ -34,13 +45,14 @@ export interface UpdateClientInput {
   address?: string | null;
   notes?: string | null;
   status?: ClientStatus;
+  groupId?: string | null;
 }
 
 export const CLIENT_REPOSITORY = Symbol('CLIENT_REPOSITORY');
 
 export interface ClientRepository {
   list(
-    query: PageQuery & { status?: ClientStatus },
+    query: PageQuery & { status?: ClientStatus; groupId?: string },
   ): Promise<Page<ClientRecord>>;
   findById(id: string): Promise<ClientRecord | null>;
   findByCode(code: string): Promise<ClientRecord | null>;

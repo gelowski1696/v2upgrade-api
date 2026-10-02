@@ -65,6 +65,25 @@ export interface SubscriptionEventRecord {
   actor: { id: string; displayName: string };
 }
 
+export interface SubscriptionRenewalRecord {
+  id: string;
+  subscriptionId: string;
+  previousExpiresAt: Date | null;
+  periodStartsAt: Date;
+  periodEndsAt: Date;
+  amount: string;
+  currency: string;
+  billingInterval: BillingInterval;
+  reason: string | null;
+  createdById: string;
+  createdAt: Date;
+}
+
+export interface SubscriptionRenewalResult {
+  subscription: SubscriptionRecord;
+  renewal: SubscriptionRenewalRecord;
+}
+
 export interface CreateSubscriptionInput {
   clientId: string;
   planVersionId: string;
@@ -112,11 +131,18 @@ export interface SubscriptionRepository {
   renew(
     id: string,
     fromStatus: SubscriptionStatus,
-    startsAt: Date,
-    expiresAt: Date,
+    previousExpiresAt: Date | null,
+    periodStartsAt: Date,
+    periodEndsAt: Date,
     actorId: string,
+    snapshot: {
+      amount: string;
+      currency: string;
+      billingInterval: BillingInterval;
+    },
     reason?: string,
-  ): Promise<SubscriptionRecord>;
+  ): Promise<SubscriptionRenewalResult>;
   softDelete(id: string, actorId: string, deletedAt: Date): Promise<void>;
   events(id: string): Promise<SubscriptionEventRecord[]>;
+  renewals(id: string): Promise<SubscriptionRenewalRecord[]>;
 }
