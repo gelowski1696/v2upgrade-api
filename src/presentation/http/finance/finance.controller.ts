@@ -18,6 +18,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import {
   CreateExpenseDto,
+  CreateGroupPaymentDto,
   CreatePaymentDto,
   FinanceListQueryDto,
   FinanceRangeQueryDto,
@@ -53,6 +54,14 @@ export class FinanceController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.finance.createPayment(input, user.id);
+  }
+
+  @Post('payments/group')
+  createGroupPayment(
+    @Body() input: CreateGroupPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.finance.createGroupPayment(input, user.id);
   }
 
   @Post('payments/:id/void')

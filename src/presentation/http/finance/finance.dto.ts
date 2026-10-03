@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMinSize,
+  ArrayUnique,
   IsIn,
+  IsArray,
   IsISO8601,
   IsNotEmpty,
   IsOptional,
@@ -9,7 +12,9 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PageQueryDto } from '../common/page-query.dto.js';
 
 export const expenseCategories = [
@@ -140,6 +145,72 @@ export class CreatePaymentDto {
   currency?: string;
 
   @ApiProperty({ example: '2026-09-30T02:30:00.000Z' })
+  @IsISO8601()
+  paidAt!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  reference?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
+export class GroupPaymentAllocationDto {
+  @ApiProperty()
+  @IsUUID()
+  clientId!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  subscriptionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  renewalId?: string;
+
+  @ApiProperty({ example: '1499.00' })
+  @IsString()
+  @Matches(amountPattern)
+  amount!: string;
+}
+
+export class CreateGroupPaymentDto {
+  @ApiProperty()
+  @IsUUID()
+  groupId!: string;
+
+  @ApiProperty({ enum: paymentPurposes })
+  @IsIn(paymentPurposes)
+  purpose!: (typeof paymentPurposes)[number];
+
+  @ApiProperty({ type: [GroupPaymentAllocationDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayUnique((allocation: GroupPaymentAllocationDto) => allocation.clientId)
+  @ValidateNested({ each: true })
+  @Type(() => GroupPaymentAllocationDto)
+  allocations!: GroupPaymentAllocationDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(250)
+  description?: string;
+
+  @ApiPropertyOptional({ example: 'PHP' })
+  @IsOptional()
+  @Matches(currencyPattern)
+  currency?: string;
+
+  @ApiProperty({ example: '2026-10-03T00:00:00.000Z' })
   @IsISO8601()
   paidAt!: string;
 

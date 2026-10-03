@@ -240,6 +240,71 @@ describe('FinanceService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('records all group allocations in one transaction and one audit event', async () => {
+    const create = jest
+      .fn<
+        (input: {
+          data: { batchId: string; clientId: string };
+          select: { id: boolean; amount: boolean };
+        }) => Promise<{ id: string; amount: ReturnType<typeof decimal> }>
+      >()
+      .mockResolvedValueOnce({ id: 'payment-1', amount: decimal('1000.00') })
+      .mockResolvedValueOnce({ id: 'payment-2', amount: decimal('1500.00') });
+    const transaction = jest.fn(async (operations: Array<Promise<unknown>>) =>
+      Promise.all(operations),
+    );
+    const prisma = {
+      clientGroup: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'group-1',
+          name: 'North Region',
+          status: 'ACTIVE',
+        }),
+      },
+      client: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'client-1', groupId: 'group-1' },
+          { id: 'client-2', groupId: 'group-1' },
+        ]),
+      },
+      subscription: { findMany: jest.fn().mockResolvedValue([]) },
+      subscriptionRenewal: { findMany: jest.fn().mockResolvedValue([]) },
+      paymentRecord: { create },
+      $transaction: transaction,
+    } as unknown as PrismaService;
+    const service = new FinanceService(prisma, audit);
+
+    const result = await service.createGroupPayment(
+      {
+        groupId: 'group-1',
+        purpose: 'INITIAL',
+        allocations: [
+          { clientId: 'client-1', amount: '1000.00' },
+          { clientId: 'client-2', amount: '1500.00' },
+        ],
+        paidAt: '2026-10-03T00:00:00.000Z',
+        reference: 'RECEIPT-100',
+      },
+      'actor-1',
+    );
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
+    const firstData = create.mock.calls[0]?.[0].data;
+    const secondData = create.mock.calls[1]?.[0].data;
+    expect(firstData?.batchId).toEqual(expect.any(String));
+    expect(secondData?.batchId).toBe(firstData?.batchId);
+    expect(result).toEqual(
+      expect.objectContaining({ clientCount: 2, amount: '2500.00' }),
+    );
+    expect(audit.record.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        action: 'payment.group_created',
+        resourceId: firstData?.batchId,
+      }),
+    );
+  });
+
   it('voids a posted payment without deleting its audit history', async () => {
     const findUnique = jest.fn().mockResolvedValue({
       id: 'payment-1',

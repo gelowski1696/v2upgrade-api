@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   AUDIT_WRITER,
   type AuditWriter,
@@ -12,6 +13,7 @@ import {
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type {
   CreateExpenseDto,
+  CreateGroupPaymentDto,
   CreatePaymentDto,
   FinanceListQueryDto,
   FinanceRangeQueryDto,
@@ -32,6 +34,7 @@ export class FinanceService {
         orderBy: { paidAt: 'desc' },
         select: {
           id: true,
+          batchId: true,
           subscriptionId: true,
           renewalId: true,
           amount: true,
@@ -180,6 +183,7 @@ export class FinanceService {
         take: query.pageSize,
         select: {
           id: true,
+          batchId: true,
           subscriptionId: true,
           renewalId: true,
           purpose: true,
@@ -345,6 +349,172 @@ export class FinanceService {
     return {
       ...payment,
       amount: payment.amount.toFixed(2),
+    };
+  }
+
+  async createGroupPayment(input: CreateGroupPaymentDto, actorId: string) {
+    const description = this.optional(input.description);
+    if (
+      (input.purpose === 'MODIFICATION' || input.purpose === 'OTHER') &&
+      !description
+    ) {
+      throw new BadRequestException(
+        'Modification and other payments require a description.',
+      );
+    }
+    for (const allocation of input.allocations) {
+      this.positiveAmount(allocation.amount);
+    }
+
+    const group = await this.prisma.clientGroup.findUnique({
+      where: { id: input.groupId },
+      select: { id: true, name: true, status: true },
+    });
+    if (!group) throw new NotFoundException('Client group not found.');
+    if (group.status !== 'ACTIVE') {
+      throw new BadRequestException(
+        'Payments cannot be recorded for an archived client group.',
+      );
+    }
+
+    const clientIds = input.allocations.map(
+      (allocation) => allocation.clientId,
+    );
+    const clients = await this.prisma.client.findMany({
+      where: { id: { in: clientIds } },
+      select: { id: true, groupId: true },
+    });
+    const clientsById = new Map(clients.map((client) => [client.id, client]));
+    for (const clientId of clientIds) {
+      const client = clientsById.get(clientId);
+      if (!client)
+        throw new NotFoundException('One or more clients were not found.');
+      if (client.groupId !== group.id) {
+        throw new BadRequestException(
+          'Every selected client must belong to the selected group.',
+        );
+      }
+    }
+
+    const subscriptionIds = input.allocations
+      .map((allocation) => allocation.subscriptionId)
+      .filter((id): id is string => Boolean(id));
+    const subscriptions = subscriptionIds.length
+      ? await this.prisma.subscription.findMany({
+          where: { id: { in: subscriptionIds } },
+          select: { id: true, clientId: true, currency: true, deletedAt: true },
+        })
+      : [];
+    const subscriptionsById = new Map(
+      subscriptions.map((subscription) => [subscription.id, subscription]),
+    );
+
+    const renewalIds = input.allocations
+      .map((allocation) => allocation.renewalId)
+      .filter((id): id is string => Boolean(id));
+    const renewals = renewalIds.length
+      ? await this.prisma.subscriptionRenewal.findMany({
+          where: { id: { in: renewalIds } },
+          select: { id: true, subscriptionId: true },
+        })
+      : [];
+    const renewalsById = new Map(
+      renewals.map((renewal) => [renewal.id, renewal]),
+    );
+    const currency = input.currency ?? subscriptions[0]?.currency ?? 'PHP';
+
+    for (const allocation of input.allocations) {
+      const subscription = allocation.subscriptionId
+        ? subscriptionsById.get(allocation.subscriptionId)
+        : undefined;
+      if (
+        allocation.subscriptionId &&
+        (!subscription || subscription.deletedAt)
+      ) {
+        throw new NotFoundException(
+          'One or more subscriptions were not found.',
+        );
+      }
+      if (subscription && subscription.clientId !== allocation.clientId) {
+        throw new BadRequestException(
+          'Each selected subscription must belong to its allocated client.',
+        );
+      }
+      if (input.purpose === 'RENEWAL' && !subscription) {
+        throw new BadRequestException(
+          'Every renewal allocation requires a subscription.',
+        );
+      }
+      if (subscription && subscription.currency !== currency) {
+        throw new BadRequestException(
+          `All selected subscriptions must use ${currency}.`,
+        );
+      }
+      const renewal = allocation.renewalId
+        ? renewalsById.get(allocation.renewalId)
+        : undefined;
+      if (allocation.renewalId && !renewal) {
+        throw new NotFoundException(
+          'One or more subscription renewals were not found.',
+        );
+      }
+      if (renewal && renewal.subscriptionId !== subscription?.id) {
+        throw new BadRequestException(
+          'Each selected renewal must belong to its allocated subscription.',
+        );
+      }
+    }
+
+    const batchId = randomUUID();
+    const paidAt = new Date(input.paidAt);
+    const reference = this.optional(input.reference);
+    const notes = this.optional(input.notes);
+    const payments = await this.prisma.$transaction(
+      input.allocations.map((allocation) =>
+        this.prisma.paymentRecord.create({
+          data: {
+            batchId,
+            clientId: allocation.clientId,
+            subscriptionId: allocation.subscriptionId,
+            renewalId: allocation.renewalId,
+            purpose: input.purpose,
+            description,
+            amount: allocation.amount,
+            currency,
+            paidAt,
+            reference,
+            notes,
+            createdById: actorId,
+          },
+          select: { id: true, amount: true },
+        }),
+      ),
+    );
+    const totalAmount = payments.reduce(
+      (total, payment) => total + Math.round(Number(payment.amount) * 100),
+      0,
+    );
+    await this.audit.record({
+      actorId,
+      action: 'payment.group_created',
+      resourceType: 'payment_batch',
+      resourceId: batchId,
+      metadata: {
+        groupId: group.id,
+        groupName: group.name,
+        paymentIds: payments.map((payment) => payment.id),
+        clientIds,
+        purpose: input.purpose,
+        amount: (totalAmount / 100).toFixed(2),
+        currency,
+      },
+    });
+    return {
+      batchId,
+      paymentIds: payments.map((payment) => payment.id),
+      clientCount: payments.length,
+      amount: (totalAmount / 100).toFixed(2),
+      currency,
     };
   }
 
@@ -519,6 +689,7 @@ export class FinanceService {
 
   private paymentRecord(payment: {
     id: string;
+    batchId?: string | null;
     subscriptionId?: string | null;
     renewalId?: string | null;
     purpose: string;
@@ -548,6 +719,7 @@ export class FinanceService {
   }) {
     return {
       id: payment.id,
+      batchId: payment.batchId ?? null,
       subscriptionId: payment.subscriptionId ?? null,
       renewalId: payment.renewalId ?? null,
       purpose: payment.purpose,
