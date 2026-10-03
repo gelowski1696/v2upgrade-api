@@ -279,91 +279,109 @@ async function main(): Promise<void> {
       );
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const group = await tx.clientGroup.upsert({
-        where: { code: GROUP_CODE },
-        create: {
-          code: GROUP_CODE,
-          name: GROUP_NAME,
-          description: 'Imported legacy IGNO client accounts.',
-          status: ClientGroupStatus.ACTIVE,
-          createdById: actor.id,
-        },
-        update: {
-          name: GROUP_NAME,
-          description: 'Imported legacy IGNO client accounts.',
-          status: ClientGroupStatus.ACTIVE,
-        },
-        select: { id: true, code: true, name: true },
-      });
-
-      let created = 0;
-      let updated = 0;
-
-      for (const [index, source] of legacyClients.entries()) {
-        const code = clientCode(index);
-        const existing = await tx.client.findUnique({
-          where: { code },
-          select: { id: true, businessName: true, notes: true },
-        });
-
-        if (
-          existing &&
-          !existing.notes?.includes(SEED_MARKER) &&
-          existing.businessName !== source.store
-        ) {
-          throw new Error(
-            `${code} already belongs to "${existing.businessName}". No records were changed.`,
-          );
-        }
-
-        const notes = buildNotes(existing?.notes ?? null, source.deviceId);
-        const client = existing
-          ? await tx.client.update({
-              where: { id: existing.id },
-              data: {
-                businessName: source.store,
-                ownerName: source.name,
-                notes,
-                status: ClientStatus.ACTIVE,
-                groupId: group.id,
-              },
-              select: { id: true },
-            })
-          : await tx.client.create({
-              data: {
-                code,
-                businessName: source.store,
-                ownerName: source.name,
-                notes,
-                status: ClientStatus.ACTIVE,
-                groupId: group.id,
-              },
-              select: { id: true },
-            });
-
-        await tx.store.upsert({
-          where: { clientId_code: { clientId: client.id, code: 'MAIN' } },
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const group = await tx.clientGroup.upsert({
+          where: { code: GROUP_CODE },
           create: {
-            clientId: client.id,
-            code: 'MAIN',
-            name: source.store,
-            status: StoreStatus.ACTIVE,
-            timezone: 'Asia/Manila',
+            code: GROUP_CODE,
+            name: GROUP_NAME,
+            description: 'Imported legacy IGNO client accounts.',
+            status: ClientGroupStatus.ACTIVE,
+            createdById: actor.id,
           },
           update: {
-            name: source.store,
-            status: StoreStatus.ACTIVE,
-            timezone: 'Asia/Manila',
+            name: GROUP_NAME,
+            description: 'Imported legacy IGNO client accounts.',
+            status: ClientGroupStatus.ACTIVE,
+          },
+          select: { id: true, code: true, name: true },
+        });
+
+        let created = 0;
+        let updated = 0;
+
+        for (const [index, source] of legacyClients.entries()) {
+          const code = clientCode(index);
+          const existing = await tx.client.findUnique({
+            where: { code },
+            select: { id: true, businessName: true, notes: true },
+          });
+
+          if (
+            existing &&
+            !existing.notes?.includes(SEED_MARKER) &&
+            existing.businessName !== source.store
+          ) {
+            throw new Error(
+              `${code} already belongs to "${existing.businessName}". No records were changed.`,
+            );
+          }
+
+          const notes = buildNotes(existing?.notes ?? null, source.deviceId);
+          const client = existing
+            ? await tx.client.update({
+                where: { id: existing.id },
+                data: {
+                  businessName: source.store,
+                  ownerName: source.name,
+                  notes,
+                  status: ClientStatus.ACTIVE,
+                  groupId: group.id,
+                },
+                select: { id: true },
+              })
+            : await tx.client.create({
+                data: {
+                  code,
+                  businessName: source.store,
+                  ownerName: source.name,
+                  notes,
+                  status: ClientStatus.ACTIVE,
+                  groupId: group.id,
+                },
+                select: { id: true },
+              });
+
+          await tx.store.upsert({
+            where: { clientId_code: { clientId: client.id, code: 'MAIN' } },
+            create: {
+              clientId: client.id,
+              code: 'MAIN',
+              name: source.store,
+              status: StoreStatus.ACTIVE,
+              timezone: 'Asia/Manila',
+            },
+            update: {
+              name: source.store,
+              status: StoreStatus.ACTIVE,
+              timezone: 'Asia/Manila',
+            },
+          });
+
+          if (existing) updated += 1;
+          else created += 1;
+        }
+
+        await tx.auditLog.create({
+          data: {
+            actorId: actor.id,
+            action: 'clients.igno_seeded',
+            resourceType: 'client_import',
+            resourceId: group.id,
+            metadata: {
+              groupCode: GROUP_CODE,
+              created,
+              updated,
+              total: legacyClients.length,
+            },
           },
         });
 
-        if (existing) updated += 1;
-        else created += 1;
-      }
-
-      return { group, created, updated };
-    });
+        return { group, created, updated };
+      },
+      { maxWait: 10_000, timeout: 30_000 },
+    );
 
     console.log(
       JSON.stringify(
