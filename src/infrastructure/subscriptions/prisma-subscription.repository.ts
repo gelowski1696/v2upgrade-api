@@ -21,6 +21,7 @@ const subscriptionInclude = {
     select: {
       id: true,
       version: true,
+      features: true,
       plan: { select: { id: true, code: true, name: true } },
     },
   },
@@ -297,6 +298,9 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
           reason,
           createdById: actorId,
         },
+        include: {
+          createdBy: { select: { id: true, displayName: true } },
+        },
       });
       await transaction.subscriptionEvent.create({
         data: {
@@ -341,6 +345,9 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
   async renewals(id: string): Promise<SubscriptionRenewalRecord[]> {
     const rows = await this.prisma.subscriptionRenewal.findMany({
       where: { subscriptionId: id },
+      include: {
+        createdBy: { select: { id: true, displayName: true } },
+      },
       orderBy: [{ periodStartsAt: 'desc' }, { createdAt: 'desc' }],
     });
     return rows.map((row) => this.mapRenewal(row));
@@ -391,6 +398,10 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       ...record,
       amount: subscription.amount.toFixed(2),
       entitlements: subscription.entitlements as Record<string, unknown>,
+      planVersion: {
+        ...subscription.planVersion,
+        features: subscription.planVersion.features as Record<string, unknown>,
+      },
       device: devices[0] ?? null,
     };
   }
@@ -406,6 +417,7 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     billingInterval: SubscriptionRecord['billingInterval'];
     reason: string | null;
     createdById: string;
+    createdBy: { id: string; displayName: string };
     createdAt: Date;
   }): SubscriptionRenewalRecord {
     return { ...renewal, amount: renewal.amount.toFixed(2) };

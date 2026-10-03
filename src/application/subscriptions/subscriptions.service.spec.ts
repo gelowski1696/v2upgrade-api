@@ -90,7 +90,7 @@ describe('SubscriptionsService', () => {
       trialDays: 0,
       graceDays: 7,
       maxDevices: 2,
-      features: { reports: true },
+      features: { reports: true, summaryCsv: false, webDashboard: true },
       publishedAt: new Date(),
       createdAt: new Date(),
     });
@@ -141,8 +141,11 @@ describe('SubscriptionsService', () => {
         planVersionId: 'version-id',
         deviceId: 'pos-device-0001',
         startsAt: '2026-01-15T00:00:00.000Z',
+        featureOverrides: { summaryCsv: true },
+        webDashboardEnabled: false,
       },
       'actor-id',
+      true,
     );
 
     expect(subscriptions.create.mock.calls[0]?.[0]).toEqual(
@@ -151,13 +154,29 @@ describe('SubscriptionsService', () => {
         currency: 'PHP',
         maxDevices: 1,
         deviceInstallationId: 'POS-DEVICE-0001',
-        entitlements: { reports: true },
+        entitlements: { reports: true, summaryCsv: true, webDashboard: false },
         expiresAt: new Date('2026-02-15T00:00:00.000Z'),
       }),
     );
     expect(audit.record.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ action: 'subscription.created' }),
     );
+  });
+
+  it('rejects create-time feature overrides from operators', async () => {
+    await expect(
+      service.create(
+        {
+          clientId: 'client-id',
+          planVersionId: 'version-id',
+          deviceId: 'pos-device-0001',
+          featureOverrides: { summaryCsv: true },
+        },
+        'operator-id',
+      ),
+    ).rejects.toBeInstanceOf(InvalidOperationError);
+
+    expect(subscriptions.create).not.toHaveBeenCalled();
   });
 
   it('blocks invalid lifecycle transitions', async () => {

@@ -48,6 +48,8 @@ export interface CreateSubscriptionCommand {
   startsAt?: string;
   expiresAt?: string;
   notes?: string;
+  featureOverrides?: Record<string, unknown>;
+  webDashboardEnabled?: boolean;
 }
 
 @Injectable()
@@ -78,7 +80,21 @@ export class SubscriptionsService {
     return subscription;
   }
 
-  async create(input: CreateSubscriptionCommand, actorId: string) {
+  async create(
+    input: CreateSubscriptionCommand,
+    actorId: string,
+    canManageFeatures = false,
+  ) {
+    if (
+      !canManageFeatures &&
+      (Object.keys(input.featureOverrides ?? {}).length > 0 ||
+        input.webDashboardEnabled !== undefined)
+    ) {
+      throw new InvalidOperationError(
+        'Only administrators can override subscription features.',
+        'FEATURE_OVERRIDE_FORBIDDEN',
+      );
+    }
     const deviceId = this.normalizeDeviceId(input.deviceId);
     const assignedDevice = await this.subscriptions.findByDeviceId(deviceId);
     if (assignedDevice) {
@@ -120,6 +136,25 @@ export class SubscriptionsService {
       );
     }
 
+    let featureOverrides = {};
+    try {
+      featureOverrides = validateFeatureMods(input.featureOverrides ?? {});
+    } catch (error) {
+      throw new InvalidOperationError(
+        error instanceof Error
+          ? error.message
+          : 'Feature overrides are invalid.',
+        'INVALID_FEATURE_MODS',
+      );
+    }
+    const entitlements = {
+      ...version.features,
+      ...featureOverrides,
+      ...(input.webDashboardEnabled === undefined
+        ? {}
+        : { webDashboard: input.webDashboardEnabled }),
+    };
+
     const subscription = await this.subscriptions.create({
       clientId: client.id,
       planVersionId: version.id,
@@ -130,7 +165,7 @@ export class SubscriptionsService {
       currency: version.currency,
       billingInterval: version.billingInterval,
       maxDevices: 1,
-      entitlements: version.features,
+      entitlements,
       notes: input.notes,
       createdById: actorId,
       deviceInstallationId: deviceId,
@@ -140,6 +175,10 @@ export class SubscriptionsService {
       action: 'subscription.created',
       resourceType: 'subscription',
       resourceId: subscription.id,
+      metadata: {
+        featureOverrides,
+        webDashboardEnabled: input.webDashboardEnabled,
+      },
     });
     return subscription;
   }
@@ -299,6 +338,37 @@ export class SubscriptionsService {
       resourceType: 'subscription',
       resourceId: id,
       metadata: { featureMods },
+    });
+    return updated;
+  }
+
+  async updateFeatures(
+    id: string,
+    input: Record<string, unknown>,
+    webDashboard: boolean,
+    actorId: string,
+  ) {
+    const current = await this.get(id);
+    let featureMods;
+    try {
+      featureMods = validateFeatureMods(input);
+    } catch (error) {
+      throw new InvalidOperationError(
+        error instanceof Error ? error.message : 'Features are invalid.',
+        'INVALID_FEATURE_MODS',
+      );
+    }
+    const updated = await this.subscriptions.updateEntitlements(id, {
+      ...current.entitlements,
+      ...featureMods,
+      webDashboard,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'subscription.features_updated',
+      resourceType: 'subscription',
+      resourceId: id,
+      metadata: { featureMods, webDashboardEnabled: webDashboard },
     });
     return updated;
   }

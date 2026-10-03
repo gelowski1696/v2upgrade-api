@@ -69,6 +69,16 @@ export class CreateSubscriptionDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  featureOverrides?: Record<string, unknown>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  webDashboardEnabled?: boolean;
 }
 
 export class ValidateDeviceDto {
@@ -90,6 +100,12 @@ export class UpdateWebDashboardDto {
   @ApiProperty()
   @IsBoolean()
   enabled!: boolean;
+}
+
+export class UpdateSubscriptionFeaturesDto extends UpdateFeatureModsDto {
+  @ApiProperty()
+  @IsBoolean()
+  webDashboardEnabled!: boolean;
 }
 
 export class SubscriptionActionDto {

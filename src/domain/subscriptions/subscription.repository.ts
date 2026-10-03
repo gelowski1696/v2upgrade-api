@@ -34,6 +34,7 @@ export interface SubscriptionRecord {
   planVersion: {
     id: string;
     version: number;
+    features: Record<string, unknown>;
     plan: { id: string; code: string; name: string };
   };
   device: {
@@ -76,6 +77,7 @@ export interface SubscriptionRenewalRecord {
   billingInterval: BillingInterval;
   reason: string | null;
   createdById: string;
+  createdBy: { id: string; displayName: string };
   createdAt: Date;
 }
 
