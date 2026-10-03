@@ -26,6 +26,7 @@
     "admin:create": "tsx src/infrastructure/scripts/create-admin.ts",
     "admin:reset-password": "tsx src/infrastructure/scripts/reset-admin-password.ts",
     "audit:subscription-start-dates": "tsx src/infrastructure/scripts/audit-subscription-start-dates.ts",
+    "seed:igno-clients": "tsx src/infrastructure/scripts/seed-igno-clients.ts",
     "demo:seed": "node scripts/seed-demo-portal.mjs",
     "verify:owner-sync": "node scripts/verify-owner-sync.mjs",
     "test:sync:30": "node scripts/test-30-store-sync.mjs",
