@@ -105,6 +105,78 @@ describe('FinanceService', () => {
     );
   });
 
+  it('lists a group payment as one summed row with all client allocations', async () => {
+    const group = { id: 'group-1', code: 'NORTH', name: 'North Region' };
+    const paymentRecord = {
+      batchId: 'batch-1',
+      subscriptionId: null,
+      renewalId: null,
+      purpose: 'INITIAL',
+      description: null,
+      currency: 'PHP',
+      reference: 'OR-100',
+      paidAt: new Date('2026-10-03T00:00:00.000Z'),
+      notes: null,
+      status: 'POSTED',
+      voidedAt: null,
+      voidReason: null,
+      renewal: null,
+      subscription: null,
+    };
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        ...paymentRecord,
+        id: 'payment-1',
+        amount: decimal('1000.00'),
+        client: { id: 'client-1', businessName: 'Store One', group },
+      },
+      {
+        ...paymentRecord,
+        id: 'payment-2',
+        amount: decimal('1500.00'),
+        client: { id: 'client-2', businessName: 'Store Two', group },
+      },
+      {
+        ...paymentRecord,
+        id: 'payment-3',
+        batchId: null,
+        amount: decimal('500.00'),
+        client: { id: 'client-3', businessName: 'Store Three', group: null },
+      },
+    ]);
+    const prisma = {
+      paymentRecord: { findMany },
+    } as unknown as PrismaService;
+    const service = new FinanceService(prisma, audit);
+
+    const result = await service.payments({
+      from: '2026-10-01',
+      to: '2026-10-31',
+      currency: 'PHP',
+      page: 1,
+      pageSize: 100,
+    });
+
+    expect(result.total).toBe(2);
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        id: 'batch:batch-1',
+        kind: 'GROUP',
+        batchId: 'batch-1',
+        amount: '2500.00',
+        clientCount: 2,
+        group,
+      }),
+    );
+    expect(result.items[0]?.allocations).toEqual([
+      expect.objectContaining({ id: 'payment-1', amount: '1000.00' }),
+      expect.objectContaining({ id: 'payment-2', amount: '1500.00' }),
+    ]);
+    expect(result.items[1]).toEqual(
+      expect.objectContaining({ kind: 'SINGLE', amount: '500.00' }),
+    );
+  });
+
   it('records an expense and writes an audit event', async () => {
     const created = {
       id: 'expense-1',

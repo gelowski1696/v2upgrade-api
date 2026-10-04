@@ -29,12 +29,17 @@ describe('BillingStatementDocumentService', () => {
         email: 'billing@example.test',
         phone: '09123456789',
         paymentInstructions: ['Contact us for payment instructions.'],
+        signatoryName: 'VON MC JIM A. MERCADO',
+        signatoryTitle: 'SERVICE PROPRIETOR',
       },
     });
 
     expect(output.subarray(0, 4).toString()).toBe('%PDF');
     expect(output.length).toBeGreaterThan(1_000);
     expect(output.toString('latin1')).toContain('DejaVuSans-Bold');
+    expect(
+      output.toString('latin1').match(/\/Subtype\s*\/Image\b/g)?.length,
+    ).toBeGreaterThanOrEqual(2);
     expect(new BillingStatementDocumentService()['money'](1200, 'PHP')).toBe(
       '₱1,200.00',
     );
@@ -69,6 +74,8 @@ describe('BillingStatementDocumentService', () => {
           'ChinaBank: Account Name: Example, Account Number: 1234567890',
           'Send proof of payment to billing@example.test',
         ],
+        signatoryName: 'VON MC JIM A. MERCADO',
+        signatoryTitle: 'SERVICE PROPRIETOR',
       },
     });
 
@@ -105,6 +112,8 @@ describe('BillingStatementDocumentService', () => {
         email: 'billing@example.test',
         phone: '09123456789',
         paymentInstructions: [],
+        signatoryName: 'VON MC JIM A. MERCADO',
+        signatoryTitle: 'SERVICE PROPRIETOR',
       },
     };
 

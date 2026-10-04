@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { join } from 'node:path';
+import {
+  billingLogoPng,
+  billingSignaturePng,
+} from './billing-statement-assets.js';
 
 const currencyBoldFont = join(
   process.cwd(),
@@ -36,6 +40,8 @@ export interface BillingStatementDocumentInput {
     email: string;
     phone: string;
     paymentInstructions: string[];
+    signatoryName: string;
+    signatoryTitle: string;
   };
 }
 
@@ -73,12 +79,16 @@ export class BillingStatementDocumentService {
       this.drawLine(document, line, index + 1, input.currency);
     });
 
-    if (document.y + 170 > document.page.height - 72) {
-      document.addPage();
-      this.drawCompanyHeader(document, input, true);
-    }
+    this.ensureSpace(document, input, 58);
     this.drawTotal(document, input);
+    this.ensureSpace(
+      document,
+      input,
+      72 + input.company.paymentInstructions.length * 30,
+    );
     this.drawPaymentInstructions(document, input.company.paymentInstructions);
+    this.ensureSpace(document, input, 96);
+    this.drawSignature(document, input);
 
     const pages = document.bufferedPageRange();
     for (
@@ -107,30 +117,119 @@ export class BillingStatementDocumentService {
     input: BillingStatementDocumentInput,
     compact = false,
   ): void {
+    const left = 48;
+    const top = document.y;
+    const logoWidth = compact ? 62 : 78;
+    const logoHeight = compact ? 41 : 51;
+    const dividerX = left + logoWidth + 12;
+    const copyX = dividerX + 14;
+    const copyWidth = 547 - copyX;
+    const headerHeight = compact ? 45 : 58;
+
+    document.image(billingLogoPng, left, top, {
+      fit: [logoWidth, logoHeight],
+      align: 'center',
+      valign: 'center',
+    });
+    document
+      .strokeColor('#456181')
+      .lineWidth(1.2)
+      .moveTo(dividerX, top)
+      .lineTo(dividerX, top + headerHeight)
+      .stroke();
     document
       .font('Helvetica-Bold')
-      .fontSize(compact ? 15 : 20)
-      .fillColor('#11100d')
-      .text(input.company.name, { align: 'left' });
-    document
-      .font('Helvetica')
-      .fontSize(8.5)
-      .fillColor('#5f5a50')
-      .text(input.company.address || 'Subscription services', {
-        align: 'left',
+      .fontSize(compact ? 13 : 17)
+      .fillColor('#3f526d')
+      .text(input.company.name, copyX, top + (compact ? 1 : 2), {
+        width: copyWidth,
+        height: compact ? 16 : 21,
+        ellipsis: true,
       });
+    document
+      .font('Helvetica-Bold')
+      .fontSize(compact ? 7.3 : 8.5)
+      .fillColor('#4b5e77')
+      .text(
+        input.company.address || 'Subscription services',
+        copyX,
+        top + (compact ? 18 : 25),
+        {
+          width: copyWidth,
+          height: compact ? 12 : 15,
+          ellipsis: true,
+        },
+      );
     const contact = [input.company.email, input.company.phone]
       .filter(Boolean)
       .join('  |  ');
-    if (contact) document.text(contact);
-    document.moveDown(compact ? 0.7 : 1.1);
+    if (contact) {
+      document
+        .font('Helvetica')
+        .fontSize(compact ? 6.8 : 7.5)
+        .fillColor('#6b665b')
+        .text(contact, copyX, top + (compact ? 31 : 42), {
+          width: copyWidth,
+          height: 10,
+          ellipsis: true,
+        });
+    }
+    const ruleY = top + headerHeight + 8;
     document
       .strokeColor('#d6a84f')
       .lineWidth(1.5)
-      .moveTo(48, document.y)
-      .lineTo(547, document.y)
+      .moveTo(left, ruleY)
+      .lineTo(547, ruleY)
       .stroke();
-    document.moveDown(0.8);
+    document.x = left;
+    document.y = ruleY + (compact ? 9 : 12);
+  }
+
+  private ensureSpace(
+    document: PDFKit.PDFDocument,
+    input: BillingStatementDocumentInput,
+    height: number,
+  ): void {
+    if (document.y + height <= document.page.height - 56) return;
+    document.addPage();
+    this.drawCompanyHeader(document, input, true);
+  }
+
+  private drawSignature(
+    document: PDFKit.PDFDocument,
+    input: BillingStatementDocumentInput,
+  ): void {
+    const left = 48;
+    const top = document.y + 6;
+    document
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#4d493f')
+      .text('Cordially yours,', left, top, { width: 180 });
+    document.image(billingSignaturePng, left, top + 13, {
+      fit: [140, 52],
+      valign: 'bottom',
+    });
+    document
+      .font('Helvetica-Bold')
+      .fontSize(9.5)
+      .fillColor('#11100d')
+      .text(input.company.signatoryName, left, top + 62, {
+        width: 220,
+        height: 13,
+        ellipsis: true,
+      });
+    document
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor('#4d493f')
+      .text(input.company.signatoryTitle, left, top + 75, {
+        width: 220,
+        height: 12,
+        ellipsis: true,
+      });
+    document.x = left;
+    document.y = top + 89;
   }
 
   private drawStatementHeading(

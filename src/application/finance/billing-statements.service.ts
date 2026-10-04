@@ -357,6 +357,14 @@ export class BillingStatementsService {
         .split('|')
         .map((item) => item.trim())
         .filter(Boolean),
+      signatoryName: this.value(
+        'BILLING_SIGNATORY_NAME',
+        'VON MC JIM A. MERCADO',
+      ),
+      signatoryTitle: this.value(
+        'BILLING_SIGNATORY_TITLE',
+        'SERVICE PROPRIETOR',
+      ),
     };
   }
 

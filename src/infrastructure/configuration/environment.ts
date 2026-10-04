@@ -182,6 +182,14 @@ export function validateEnvironment(config: Environment): Environment {
     BILLING_PAYMENT_INSTRUCTIONS: stringValue(
       config.BILLING_PAYMENT_INSTRUCTIONS,
     ),
+    BILLING_SIGNATORY_NAME: stringValue(
+      config.BILLING_SIGNATORY_NAME,
+      'VON MC JIM A. MERCADO',
+    ),
+    BILLING_SIGNATORY_TITLE: stringValue(
+      config.BILLING_SIGNATORY_TITLE,
+      'SERVICE PROPRIETOR',
+    ),
     PORTAL_SCHEDULED_REPORTS_ENABLED: booleanValue(
       config.PORTAL_SCHEDULED_REPORTS_ENABLED,
       false,

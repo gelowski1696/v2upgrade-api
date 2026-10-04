@@ -19,6 +19,42 @@ import type {
   FinanceRangeQueryDto,
 } from '../../presentation/http/finance/finance.dto.js';
 
+export interface PaymentAllocationView {
+  id: string;
+  batchId: string | null;
+  subscriptionId: string | null;
+  renewalId: string | null;
+  purpose: string;
+  description: string | null;
+  amount: string;
+  currency: string;
+  reference: string | null;
+  paidAt: Date;
+  notes: string | null;
+  status: 'POSTED' | 'VOIDED';
+  voidedAt: Date | null;
+  voidReason: string | null;
+  client: {
+    id: string;
+    businessName: string;
+    group: { id: string; code: string; name: string } | null;
+  };
+  plan: { id: string; name: string } | null;
+  renewal: {
+    id: string;
+    periodStartsAt: Date;
+    periodEndsAt: Date;
+  } | null;
+}
+
+export interface PaymentListView extends Omit<PaymentAllocationView, 'status'> {
+  kind: 'SINGLE' | 'GROUP';
+  group: PaymentAllocationView['client']['group'];
+  clientCount: number;
+  allocations: PaymentAllocationView[];
+  status: 'POSTED' | 'VOIDED' | 'PARTIALLY_VOIDED';
+}
+
 @Injectable()
 export class FinanceService {
   constructor(
@@ -175,51 +211,100 @@ export class FinanceService {
   async payments(query: FinanceListQueryDto) {
     const range = this.range(query);
     const where = this.paymentWhere(query, range);
-    const [items, total] = await Promise.all([
-      this.prisma.paymentRecord.findMany({
-        where,
-        orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-        select: {
-          id: true,
-          batchId: true,
-          subscriptionId: true,
-          renewalId: true,
-          purpose: true,
-          description: true,
-          amount: true,
-          currency: true,
-          reference: true,
-          paidAt: true,
-          notes: true,
-          status: true,
-          voidedAt: true,
-          voidReason: true,
-          client: {
-            select: {
-              id: true,
-              businessName: true,
-              group: { select: { id: true, code: true, name: true } },
-            },
+    const payments = await this.prisma.paymentRecord.findMany({
+      where,
+      orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        batchId: true,
+        subscriptionId: true,
+        renewalId: true,
+        purpose: true,
+        description: true,
+        amount: true,
+        currency: true,
+        reference: true,
+        paidAt: true,
+        notes: true,
+        status: true,
+        voidedAt: true,
+        voidReason: true,
+        client: {
+          select: {
+            id: true,
+            businessName: true,
+            group: { select: { id: true, code: true, name: true } },
           },
-          renewal: {
-            select: { id: true, periodStartsAt: true, periodEndsAt: true },
-          },
-          subscription: {
-            select: {
-              id: true,
-              planVersion: {
-                select: { plan: { select: { id: true, name: true } } },
-              },
+        },
+        renewal: {
+          select: { id: true, periodStartsAt: true, periodEndsAt: true },
+        },
+        subscription: {
+          select: {
+            id: true,
+            planVersion: {
+              select: { plan: { select: { id: true, name: true } } },
             },
           },
         },
-      }),
-      this.prisma.paymentRecord.count({ where }),
-    ]);
+      },
+    });
+    const logicalItems: PaymentListView[] = [];
+    const batches = new Map<string, PaymentListView>();
+    for (const payment of payments) {
+      const allocation = this.paymentAllocation(payment);
+      if (!payment.batchId) {
+        logicalItems.push({
+          ...allocation,
+          kind: 'SINGLE',
+          group: allocation.client.group,
+          clientCount: 1,
+          allocations: [],
+          status: allocation.status,
+        });
+        continue;
+      }
+      let batch = batches.get(payment.batchId);
+      if (!batch) {
+        const newBatch: PaymentListView = {
+          ...allocation,
+          id: `batch:${payment.batchId}`,
+          kind: 'GROUP',
+          group: allocation.client.group,
+          clientCount: 0,
+          amount: '0.00',
+          plan: null,
+          renewal: null,
+          status: allocation.status,
+          allocations: [],
+        };
+        batches.set(payment.batchId, newBatch);
+        logicalItems.push(newBatch);
+        batch = newBatch;
+      }
+      batch.allocations.push(allocation);
+      batch.clientCount = batch.allocations.length;
+      batch.amount = (
+        batch.allocations.reduce(
+          (total, item) => total + Math.round(Number(item.amount) * 100),
+          0,
+        ) / 100
+      ).toFixed(2);
+      const postedCount = batch.allocations.filter(
+        (item) => item.status === 'POSTED',
+      ).length;
+      batch.status =
+        postedCount === batch.allocations.length
+          ? 'POSTED'
+          : postedCount === 0
+            ? 'VOIDED'
+            : 'PARTIALLY_VOIDED';
+    }
+    const total = logicalItems.length;
+    const start = (query.page - 1) * query.pageSize;
+    const items = logicalItems.slice(start, start + query.pageSize);
     return {
-      items: items.map((payment) => this.paymentRecord(payment)),
+      items,
       page: query.page,
       pageSize: query.pageSize,
       total,
@@ -716,7 +801,47 @@ export class FinanceService {
       periodStartsAt: Date;
       periodEndsAt: Date;
     } | null;
-  }) {
+  }): PaymentListView {
+    const allocation = this.paymentAllocation(payment);
+    return {
+      ...allocation,
+      kind: 'SINGLE' as const,
+      group: allocation.client.group,
+      clientCount: 1,
+      allocations: [] as PaymentAllocationView[],
+    };
+  }
+
+  private paymentAllocation(payment: {
+    id: string;
+    batchId?: string | null;
+    subscriptionId?: string | null;
+    renewalId?: string | null;
+    purpose: string;
+    description: string | null;
+    amount: { toFixed(digits: number): string };
+    currency: string;
+    reference: string | null;
+    paidAt: Date;
+    notes: string | null;
+    status: string;
+    voidedAt: Date | null;
+    voidReason: string | null;
+    client: {
+      id: string;
+      businessName: string;
+      group: { id: string; code: string; name: string } | null;
+    };
+    subscription: {
+      id: string;
+      planVersion: { plan: { id: string; name: string } };
+    } | null;
+    renewal: {
+      id: string;
+      periodStartsAt: Date;
+      periodEndsAt: Date;
+    } | null;
+  }): PaymentAllocationView {
     return {
       id: payment.id,
       batchId: payment.batchId ?? null,
@@ -729,7 +854,7 @@ export class FinanceService {
       reference: payment.reference,
       paidAt: payment.paidAt,
       notes: payment.notes,
-      status: payment.status,
+      status: payment.status === 'VOIDED' ? 'VOIDED' : 'POSTED',
       voidedAt: payment.voidedAt,
       voidReason: payment.voidReason,
       client: payment.client,
