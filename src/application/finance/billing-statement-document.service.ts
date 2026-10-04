@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import { join } from 'node:path';
+
+const currencyBoldFont = join(
+  process.cwd(),
+  'node_modules',
+  'dejavu-fonts-ttf',
+  'ttf',
+  'DejaVuSans-Bold.ttf',
+);
 
 export interface BillingStatementLine {
   subscriptionId: string;
@@ -44,6 +53,7 @@ export class BillingStatementDocumentService {
       },
     });
     const chunks: Buffer[] = [];
+    document.registerFont('Currency-Bold', currencyBoldFont);
     document.on('data', (chunk: Buffer) => chunks.push(chunk));
     const output = new Promise<Buffer>((resolve, reject) => {
       document.on('end', () => resolve(Buffer.concat(chunks)));
@@ -77,16 +87,15 @@ export class BillingStatementDocumentService {
       index += 1
     ) {
       document.switchToPage(index);
-      document
-        .font('Helvetica')
-        .fontSize(8)
-        .fillColor('#6b665b')
-        .text(
-          `Statement ${input.statementNumber}  |  Page ${index + 1} of ${pages.count}`,
-          48,
-          document.page.height - 40,
-          { align: 'center', width: document.page.width - 96 },
-        );
+      const footer = `Statement ${input.statementNumber}  |  Page ${index + 1} of ${pages.count}`;
+      document.font('Helvetica').fontSize(8).fillColor('#6b665b');
+      const footerWidth = document.widthOfString(footer);
+      document.text(
+        footer,
+        (document.page.width - footerWidth) / 2,
+        document.page.height - 40,
+        { lineBreak: false },
+      );
     }
 
     document.end();
@@ -225,7 +234,7 @@ export class BillingStatementDocumentService {
         ellipsis: true,
       });
     document
-      .font('Helvetica-Bold')
+      .font('Currency-Bold')
       .fontSize(8.5)
       .fillColor('#211f1a')
       .text(this.money(line.amount, currency), 469, y + 8, {
@@ -256,6 +265,7 @@ export class BillingStatementDocumentService {
         width: 105,
       });
     document
+      .font('Currency-Bold')
       .fontSize(13)
       .text(this.money(input.totalAmount, input.currency), 454, y + 8, {
         width: 79,

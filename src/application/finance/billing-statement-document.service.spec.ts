@@ -34,6 +34,46 @@ describe('BillingStatementDocumentService', () => {
 
     expect(output.subarray(0, 4).toString()).toBe('%PDF');
     expect(output.length).toBeGreaterThan(1_000);
+    expect(output.toString('latin1')).toContain('DejaVuSans-Bold');
+    expect(new BillingStatementDocumentService()['money'](1200, 'PHP')).toBe(
+      '₱1,200.00',
+    );
+  });
+
+  it('does not create blank pages while adding page footers', async () => {
+    const lines = Array.from({ length: 30 }, (_, index) => ({
+      subscriptionId: `subscription-${index + 1}`,
+      clientCode: `IGNO-${String(index + 1).padStart(4, '0')}`,
+      ownerName: `Owner ${index + 1}`,
+      businessName: `Store ${index + 1}`,
+      address: null,
+      planName: 'Gelo Testing',
+      periodStartsAt: '2026-10-04T00:00:00.000Z',
+      periodEndsAt: '2026-11-04T00:00:00.000Z',
+      amount: 1200,
+    }));
+    const output = await new BillingStatementDocumentService().render({
+      statementNumber: 'BS-20261004-PAGINATION',
+      statementDate: '2026-10-04',
+      dueDate: '2026-10-11',
+      targetName: 'IGNO Clients',
+      currency: 'PHP',
+      totalAmount: 36_000,
+      lines,
+      company: {
+        name: 'VMJAMTECH',
+        address: 'Valenzuela City',
+        email: 'billing@example.test',
+        phone: '09123456789',
+        paymentInstructions: [
+          'ChinaBank: Account Name: Example, Account Number: 1234567890',
+          'Send proof of payment to billing@example.test',
+        ],
+      },
+    });
+
+    const pageObjects = output.toString('latin1').match(/\/Type\s*\/Page\b/g);
+    expect(pageObjects).toHaveLength(3);
   });
 
   it('resets the cursor and gives payment instructions the full page width', () => {
