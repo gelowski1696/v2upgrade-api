@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   ArrayUnique,
+  IsBoolean,
+  IsEmail,
   IsIn,
   IsArray,
   IsISO8601,
@@ -39,6 +41,7 @@ export const paymentStatuses = ['POSTED', 'VOIDED'] as const;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const amountPattern = /^\d{1,10}(\.\d{1,2})?$/;
 const currencyPattern = /^[A-Z]{3}$/;
+export const billingStatementTargets = ['CLIENT', 'GROUP'] as const;
 
 export class FinanceRangeQueryDto {
   @ApiPropertyOptional({ example: '2026-09-01' })
@@ -278,4 +281,46 @@ export class CreateExpenseDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+}
+
+export class BillingStatementPreviewQueryDto {
+  @ApiProperty({ enum: billingStatementTargets })
+  @IsIn(billingStatementTargets)
+  targetType!: (typeof billingStatementTargets)[number];
+
+  @ApiProperty()
+  @IsUUID()
+  targetId!: string;
+}
+
+export class SendBillingStatementDto extends BillingStatementPreviewQueryDto {
+  @ApiProperty({ example: 'billing@example.com' })
+  @IsEmail()
+  @MaxLength(180)
+  recipientEmail!: string;
+
+  @ApiProperty({ default: false })
+  @IsBoolean()
+  rememberEmail!: boolean;
+
+  @ApiProperty({ example: '2026-10-04' })
+  @Matches(datePattern)
+  statementDate!: string;
+
+  @ApiPropertyOptional({ example: '2026-10-11' })
+  @IsOptional()
+  @Matches(datePattern)
+  dueDate?: string;
+
+  @ApiProperty({ example: 'October 2026 LPG POS System Billing Statement' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(180)
+  subject!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  message?: string;
 }

@@ -548,7 +548,6 @@ export class PortalScheduledReportsService
     payload: string,
     headers: { id: string; timestamp: string; signature: string },
   ): Promise<void> {
-    if (!this.enabled) return;
     let event;
     try {
       event = this.mailer.verifyWebhook(payload, headers);
@@ -559,36 +558,68 @@ export class PortalScheduledReportsService
     const occurredAt = new Date(event.created_at);
     switch (event.type) {
       case 'email.sent':
-        await this.prisma.portalReportDelivery.updateMany({
-          where: {
-            providerMessageId: event.data.email_id,
-            status: { in: ['SENT', 'PROCESSING'] },
-          },
-          data: { status: 'SENT', providerStatus: event.type },
-        });
+        await this.prisma.$transaction([
+          this.prisma.portalReportDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { in: ['SENT', 'PROCESSING'] },
+            },
+            data: { status: 'SENT', providerStatus: event.type },
+          }),
+          this.prisma.billingStatementDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { in: ['SENT', 'PROCESSING'] },
+            },
+            data: { status: 'SENT', providerStatus: event.type },
+          }),
+        ]);
         return;
       case 'email.delivery_delayed':
-        await this.prisma.portalReportDelivery.updateMany({
-          where: {
-            providerMessageId: event.data.email_id,
-            status: { in: ['SENT', 'DELAYED'] },
-          },
-          data: { status: 'DELAYED', providerStatus: event.type },
-        });
+        await this.prisma.$transaction([
+          this.prisma.portalReportDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { in: ['SENT', 'DELAYED'] },
+            },
+            data: { status: 'DELAYED', providerStatus: event.type },
+          }),
+          this.prisma.billingStatementDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { in: ['SENT', 'DELAYED'] },
+            },
+            data: { status: 'DELAYED', providerStatus: event.type },
+          }),
+        ]);
         return;
       case 'email.delivered':
-        await this.prisma.portalReportDelivery.updateMany({
-          where: {
-            providerMessageId: event.data.email_id,
-            status: { notIn: ['BOUNCED', 'COMPLAINED'] },
-          },
-          data: {
-            status: 'DELIVERED',
-            providerStatus: event.type,
-            deliveredAt: occurredAt,
-            errorCode: null,
-          },
-        });
+        await this.prisma.$transaction([
+          this.prisma.portalReportDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { notIn: ['BOUNCED', 'COMPLAINED'] },
+            },
+            data: {
+              status: 'DELIVERED',
+              providerStatus: event.type,
+              deliveredAt: occurredAt,
+              errorCode: null,
+            },
+          }),
+          this.prisma.billingStatementDelivery.updateMany({
+            where: {
+              providerMessageId: event.data.email_id,
+              status: { notIn: ['BOUNCED', 'COMPLAINED'] },
+            },
+            data: {
+              status: 'DELIVERED',
+              providerStatus: event.type,
+              deliveredAt: occurredAt,
+              errorCode: null,
+            },
+          }),
+        ]);
         return;
       case 'email.bounced':
         await this.recordTerminalProviderFailure(
@@ -628,15 +659,21 @@ export class PortalScheduledReportsService
     providerStatus: string,
     errorCode: string,
   ): Promise<void> {
-    await this.prisma.portalReportDelivery.updateMany({
-      where: { providerMessageId },
-      data: {
-        status,
-        providerStatus,
-        errorCode,
-        nextAttemptAt: null,
-      },
-    });
+    await this.prisma.$transaction([
+      this.prisma.portalReportDelivery.updateMany({
+        where: { providerMessageId },
+        data: {
+          status,
+          providerStatus,
+          errorCode,
+          nextAttemptAt: null,
+        },
+      }),
+      this.prisma.billingStatementDelivery.updateMany({
+        where: { providerMessageId },
+        data: { status, providerStatus, errorCode },
+      }),
+    ]);
   }
 
   private summaryMail(

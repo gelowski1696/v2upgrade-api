@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { FinanceService } from '../../../application/finance/finance.service.js';
+import { BillingStatementsService } from '../../../application/finance/billing-statements.service.js';
 import type { AuthenticatedUser } from '../../../domain/auth/auth.types.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -20,8 +21,10 @@ import {
   CreateExpenseDto,
   CreateGroupPaymentDto,
   CreatePaymentDto,
+  BillingStatementPreviewQueryDto,
   FinanceListQueryDto,
   FinanceRangeQueryDto,
+  SendBillingStatementDto,
   VoidPaymentDto,
 } from './finance.dto.js';
 
@@ -31,7 +34,10 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
 export class FinanceController {
-  constructor(private readonly finance: FinanceService) {}
+  constructor(
+    private readonly finance: FinanceService,
+    private readonly billingStatements: BillingStatementsService,
+  ) {}
 
   @Get('overview')
   overview(@Query() query: FinanceRangeQueryDto) {
@@ -46,6 +52,21 @@ export class FinanceController {
   @Get('payments')
   payments(@Query() query: FinanceListQueryDto) {
     return this.finance.payments(query);
+  }
+
+  @Get('billing-statements/preview')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  billingStatementPreview(@Query() query: BillingStatementPreviewQueryDto) {
+    return this.billingStatements.preview(query);
+  }
+
+  @Post('billing-statements/send')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  sendBillingStatement(
+    @Body() input: SendBillingStatementDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.billingStatements.send(input, user.id);
   }
 
   @Post('payments')

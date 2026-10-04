@@ -58,6 +58,9 @@ describe('PortalScheduledReportsService', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      billingStatementDelivery: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       portalEmailVerification: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'verification-one' }),

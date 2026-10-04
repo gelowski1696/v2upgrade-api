@@ -51,6 +51,21 @@ enum PaymentPurpose {
   OTHER
 }
 
+enum BillingStatementTarget {
+  CLIENT
+  GROUP
+}
+
+enum BillingStatementDeliveryStatus {
+  PROCESSING
+  SENT
+  DELAYED
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  FAILED
+}
+
 enum ClientGroupStatus {
   ACTIVE
   ARCHIVED
@@ -162,24 +177,25 @@ enum WebVitalName {
 }
 
 model User {
-  id                   String                @id @default(uuid()) @db.Uuid
-  username             String                @unique @db.VarChar(80)
-  displayName          String                @map("display_name") @db.VarChar(160)
-  passwordHash         String                @map("password_hash") @db.VarChar(255)
-  role                 UserRole              @default(OPERATOR)
-  status               UserStatus            @default(ACTIVE)
-  lastLoginAt          DateTime?             @map("last_login_at") @db.Timestamptz(3)
-  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                   String                     @id @default(uuid()) @db.Uuid
+  username             String                     @unique @db.VarChar(80)
+  displayName          String                     @map("display_name") @db.VarChar(160)
+  passwordHash         String                     @map("password_hash") @db.VarChar(255)
+  role                 UserRole                   @default(OPERATOR)
+  status               UserStatus                 @default(ACTIVE)
+  lastLoginAt          DateTime?                  @map("last_login_at") @db.Timestamptz(3)
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
   refreshSessions      RefreshSession[]
-  createdSubscriptions Subscription[]        @relation("SubscriptionCreatedBy")
-  deletedSubscriptions Subscription[]        @relation("SubscriptionDeletedBy")
-  subscriptionEvents   SubscriptionEvent[]   @relation("SubscriptionEventActor")
-  paymentRecords       PaymentRecord[]       @relation("PaymentCreatedBy")
-  voidedPayments       PaymentRecord[]       @relation("PaymentVoidedBy")
-  clientGroupsCreated  ClientGroup[]         @relation("ClientGroupCreatedBy")
-  renewalsCreated      SubscriptionRenewal[] @relation("SubscriptionRenewalCreatedBy")
-  expensesCreated      Expense[]             @relation("ExpenseCreatedBy")
+  createdSubscriptions Subscription[]             @relation("SubscriptionCreatedBy")
+  deletedSubscriptions Subscription[]             @relation("SubscriptionDeletedBy")
+  subscriptionEvents   SubscriptionEvent[]        @relation("SubscriptionEventActor")
+  paymentRecords       PaymentRecord[]            @relation("PaymentCreatedBy")
+  voidedPayments       PaymentRecord[]            @relation("PaymentVoidedBy")
+  clientGroupsCreated  ClientGroup[]              @relation("ClientGroupCreatedBy")
+  renewalsCreated      SubscriptionRenewal[]      @relation("SubscriptionRenewalCreatedBy")
+  expensesCreated      Expense[]                  @relation("ExpenseCreatedBy")
+  billingStatements    BillingStatementDelivery[] @relation("BillingStatementCreatedBy")
   auditLogs            AuditLog[]
 
   @@map("users")
@@ -206,27 +222,29 @@ model RefreshSession {
 }
 
 model Client {
-  id                  String              @id @default(uuid()) @db.Uuid
-  code                String              @unique @db.VarChar(40)
-  businessName        String              @map("business_name") @db.VarChar(180)
-  ownerName           String?             @map("owner_name") @db.VarChar(160)
-  email               String?             @db.VarChar(180)
-  phone               String?             @db.VarChar(50)
+  id                  String                     @id @default(uuid()) @db.Uuid
+  code                String                     @unique @db.VarChar(40)
+  businessName        String                     @map("business_name") @db.VarChar(180)
+  ownerName           String?                    @map("owner_name") @db.VarChar(160)
+  email               String?                    @db.VarChar(180)
+  billingEmail        String?                    @map("billing_email") @db.VarChar(180)
+  phone               String?                    @db.VarChar(50)
   address             String?
   notes               String?
-  status              ClientStatus        @default(ACTIVE)
-  groupId             String?             @map("group_id") @db.Uuid
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  status              ClientStatus               @default(ACTIVE)
+  groupId             String?                    @map("group_id") @db.Uuid
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
   subscriptions       Subscription[]
   devices             Device[]
   stores              Store[]
   portalUsers         PortalUser[]
   invitations         PortalInvitation[]
-  webAnalyticsEnabled Boolean             @default(true) @map("web_analytics_enabled")
+  webAnalyticsEnabled Boolean                    @default(true) @map("web_analytics_enabled")
   webAnalyticsEvents  WebAnalyticsEvent[]
-  group               ClientGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  group               ClientGroup?               @relation(fields: [groupId], references: [id], onDelete: SetNull)
   paymentRecords      PaymentRecord[]
+  billingStatements   BillingStatementDelivery[]
 
   @@index([businessName])
   @@index([status])
@@ -235,16 +253,18 @@ model Client {
 }
 
 model ClientGroup {
-  id          String            @id @default(uuid()) @db.Uuid
-  code        String            @unique @db.VarChar(40)
-  name        String            @unique @db.VarChar(120)
-  description String?
-  status      ClientGroupStatus @default(ACTIVE)
-  createdById String            @map("created_by_id") @db.Uuid
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
-  createdBy   User              @relation("ClientGroupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  clients     Client[]
+  id                String                     @id @default(uuid()) @db.Uuid
+  code              String                     @unique @db.VarChar(40)
+  name              String                     @unique @db.VarChar(120)
+  description       String?
+  billingEmail      String?                    @map("billing_email") @db.VarChar(180)
+  status            ClientGroupStatus          @default(ACTIVE)
+  createdById       String                     @map("created_by_id") @db.Uuid
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy         User                       @relation("ClientGroupCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  clients           Client[]
+  billingStatements BillingStatementDelivery[]
 
   @@index([status, name])
   @@map("client_groups")
@@ -790,6 +810,37 @@ model Expense {
   @@index([incurredAt, currency])
   @@index([category, incurredAt])
   @@map("expenses")
+}
+
+model BillingStatementDelivery {
+  id                String                         @id @default(uuid()) @db.Uuid
+  targetType        BillingStatementTarget         @map("target_type")
+  clientId          String?                        @map("client_id") @db.Uuid
+  groupId           String?                        @map("group_id") @db.Uuid
+  recipientEmail    String                         @map("recipient_email") @db.VarChar(180)
+  subject           String                         @db.VarChar(180)
+  statementDate     String                         @map("statement_date") @db.VarChar(10)
+  dueDate           String?                        @map("due_date") @db.VarChar(10)
+  currency          String                         @default("PHP") @db.Char(3)
+  totalAmount       Decimal                        @map("total_amount") @db.Decimal(12, 2)
+  lineItems         Json                           @map("line_items")
+  status            BillingStatementDeliveryStatus @default(PROCESSING)
+  providerMessageId String?                        @unique @map("provider_message_id") @db.VarChar(100)
+  providerStatus    String?                        @map("provider_status") @db.VarChar(40)
+  errorCode         String?                        @map("error_code") @db.VarChar(80)
+  sentAt            DateTime?                      @map("sent_at") @db.Timestamptz(3)
+  deliveredAt       DateTime?                      @map("delivered_at") @db.Timestamptz(3)
+  createdById       String                         @map("created_by_id") @db.Uuid
+  createdAt         DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client            Client?                        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  group             ClientGroup?                   @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  createdBy         User                           @relation("BillingStatementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([clientId, createdAt])
+  @@index([groupId, createdAt])
+  @@index([status, createdAt])
+  @@map("billing_statement_deliveries")
 }
 
 model AuditLog {

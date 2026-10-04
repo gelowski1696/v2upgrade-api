@@ -10,7 +10,7 @@ export interface PortalMail {
   idempotencyKey: string;
   attachments?: Array<{
     filename: string;
-    content: string;
+    content: string | Buffer;
     contentType: string;
   }>;
 }
@@ -49,7 +49,9 @@ export class PortalMailerService {
         html: message.html,
         attachments: message.attachments?.map((attachment) => ({
           filename: attachment.filename,
-          content: Buffer.from(attachment.content, 'utf8'),
+          content: Buffer.isBuffer(attachment.content)
+            ? attachment.content
+            : Buffer.from(attachment.content, 'utf8'),
           contentType: attachment.contentType,
         })),
       },

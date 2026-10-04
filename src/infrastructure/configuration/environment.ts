@@ -175,6 +175,13 @@ export function validateEnvironment(config: Environment): Environment {
     RESEND_API_KEY: stringValue(config.RESEND_API_KEY),
     RESEND_FROM_EMAIL: stringValue(config.RESEND_FROM_EMAIL),
     RESEND_WEBHOOK_SECRET: stringValue(config.RESEND_WEBHOOK_SECRET),
+    BILLING_COMPANY_NAME: stringValue(config.BILLING_COMPANY_NAME, 'VMJAMTECH'),
+    BILLING_COMPANY_ADDRESS: stringValue(config.BILLING_COMPANY_ADDRESS),
+    BILLING_SUPPORT_EMAIL: stringValue(config.BILLING_SUPPORT_EMAIL),
+    BILLING_SUPPORT_PHONE: stringValue(config.BILLING_SUPPORT_PHONE),
+    BILLING_PAYMENT_INSTRUCTIONS: stringValue(
+      config.BILLING_PAYMENT_INSTRUCTIONS,
+    ),
     PORTAL_SCHEDULED_REPORTS_ENABLED: booleanValue(
       config.PORTAL_SCHEDULED_REPORTS_ENABLED,
       false,
