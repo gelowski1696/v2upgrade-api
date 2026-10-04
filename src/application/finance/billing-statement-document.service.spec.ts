@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { BillingStatementDocumentService } from './billing-statement-document.service.js';
 
 describe('BillingStatementDocumentService', () => {
@@ -33,5 +34,54 @@ describe('BillingStatementDocumentService', () => {
 
     expect(output.subarray(0, 4).toString()).toBe('%PDF');
     expect(output.length).toBeGreaterThan(1_000);
+  });
+
+  it('resets the cursor and gives payment instructions the full page width', () => {
+    const service = new BillingStatementDocumentService();
+    const text = jest.fn().mockReturnThis();
+    const document = {
+      x: 454,
+      y: 100,
+      page: { width: 595 },
+      rect: jest.fn().mockReturnThis(),
+      fill: jest.fn().mockReturnThis(),
+      font: jest.fn().mockReturnThis(),
+      fontSize: jest.fn().mockReturnThis(),
+      fillColor: jest.fn().mockReturnThis(),
+      text,
+      moveDown: jest.fn().mockReturnThis(),
+    } as unknown as PDFKit.PDFDocument;
+    const input = {
+      statementNumber: 'BS-20261004-12345678',
+      statementDate: '2026-10-04',
+      dueDate: '2026-10-11',
+      targetName: 'IGNO Group',
+      currency: 'PHP',
+      totalAmount: 1638,
+      lines: [],
+      company: {
+        name: 'VMJAMTECH',
+        address: 'Valenzuela City',
+        email: 'billing@example.test',
+        phone: '09123456789',
+        paymentInstructions: [],
+      },
+    };
+
+    service['drawTotal'](document, input);
+    service['drawPaymentInstructions'](document, [
+      'ChinaBank: Account Name: Example, Account Number: 1234567890',
+    ]);
+
+    expect(document.x).toBe(48);
+    expect(text).toHaveBeenCalledWith('PAYMENT DETAILS', 48, 158, {
+      width: 499,
+    });
+    expect(text).toHaveBeenCalledWith(
+      'ChinaBank: Account Name: Example, Account Number: 1234567890',
+      74,
+      158,
+      { width: 473, lineGap: 2 },
+    );
   });
 });

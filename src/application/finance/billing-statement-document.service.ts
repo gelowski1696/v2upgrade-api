@@ -261,6 +261,7 @@ export class BillingStatementDocumentService {
         width: 79,
         align: 'right',
       });
+    document.x = 48;
     document.y = y + 58;
   }
 
@@ -268,22 +269,43 @@ export class BillingStatementDocumentService {
     document: PDFKit.PDFDocument,
     instructions: string[],
   ): void {
+    const left = 48;
+    const width = document.page.width - 96;
+    document.x = left;
     document
       .font('Helvetica-Bold')
       .fontSize(10)
       .fillColor('#11100d')
-      .text('PAYMENT DETAILS');
-    document.moveDown(0.4);
-    document.font('Helvetica').fontSize(8.8).fillColor('#4d493f');
+      .text('PAYMENT DETAILS', left, document.y, { width });
+    document.moveDown(0.55);
     instructions.forEach((instruction, index) => {
-      document.text(`${index + 1}. ${instruction}`, { indent: 8, lineGap: 2 });
+      const itemY = document.y;
+      document
+        .font('Helvetica-Bold')
+        .fontSize(8.8)
+        .fillColor('#8c5e12')
+        .text(`${index + 1}.`, left, itemY, { width: 22 });
+      document
+        .font('Helvetica')
+        .fontSize(8.8)
+        .fillColor('#4d493f')
+        .text(instruction, left + 26, itemY, {
+          width: width - 26,
+          lineGap: 2,
+        });
+      document.x = left;
+      document.y += 5;
     });
-    document.moveDown(1.2);
+    document.moveDown(0.8);
     document
       .font('Helvetica')
       .fontSize(9)
+      .fillColor('#4d493f')
       .text(
         'Thank you for your continued trust in our service. Please contact us if any billing detail needs clarification.',
+        left,
+        document.y,
+        { width, lineGap: 2 },
       );
   }
 
