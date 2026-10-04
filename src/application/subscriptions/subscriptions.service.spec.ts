@@ -36,6 +36,8 @@ describe('SubscriptionsService', () => {
     touchDevice: jest.fn(),
     assignDevice: jest.fn(),
     create: jest.fn(),
+    groupCreationOptions: jest.fn(),
+    createGroup: jest.fn(),
     updateEntitlements: jest.fn(),
     transition: jest.fn(),
     renew: jest.fn(),
@@ -176,7 +178,113 @@ describe('SubscriptionsService', () => {
       ),
     ).rejects.toBeInstanceOf(InvalidOperationError);
 
-    expect(subscriptions.create).not.toHaveBeenCalled();
+    expect(subscriptions.create.mock.calls).toHaveLength(0);
+  });
+
+  it('creates one draft subscription for each selected group member', async () => {
+    plans.findVersion.mockResolvedValue({
+      id: 'version-id',
+      planId: 'plan-id',
+      version: 1,
+      billingInterval: 'MONTHLY',
+      amount: '1200.00',
+      currency: 'PHP',
+      trialDays: 0,
+      graceDays: 7,
+      maxDevices: 1,
+      features: { webDashboard: true },
+      publishedAt: new Date(),
+      createdAt: new Date(),
+    });
+    plans.findById.mockResolvedValue({
+      id: 'plan-id',
+      code: 'GROUP-MONTHLY',
+      name: 'Group monthly',
+      status: 'ACTIVE',
+      versions: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    subscriptions.findByDeviceId.mockResolvedValue(null);
+    subscriptions.createGroup.mockResolvedValue([
+      subscriptionRecord({ id: 'subscription-one', clientId: 'client-one' }),
+      subscriptionRecord({ id: 'subscription-two', clientId: 'client-two' }),
+    ]);
+
+    const result = await service.createGroup(
+      {
+        groupId: 'group-id',
+        planVersionId: 'version-id',
+        members: [
+          { clientId: 'client-one', deviceId: 'pos-device-one' },
+          { clientId: 'client-two', deviceId: 'pos-device-two' },
+        ],
+        startsAt: '2026-10-04T00:00:00.000Z',
+      },
+      'admin-id',
+      true,
+    );
+
+    expect(result.createdCount).toBe(2);
+    expect(subscriptions.createGroup.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        groupId: 'group-id',
+        members: [
+          { clientId: 'client-one', deviceInstallationId: 'POS-DEVICE-ONE' },
+          { clientId: 'client-two', deviceInstallationId: 'POS-DEVICE-TWO' },
+        ],
+        amount: '1200.00',
+        currency: 'PHP',
+        expiresAt: new Date('2026-11-04T00:00:00.000Z'),
+      }),
+    );
+    expect(audit.record.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        action: 'subscriptions.group_created',
+        resourceId: 'group-id',
+      }),
+    );
+  });
+
+  it('marks only members without subscriptions and with active stores as eligible', async () => {
+    subscriptions.groupCreationOptions.mockResolvedValue({
+      group: {
+        id: 'group-id',
+        code: 'IGNO',
+        name: 'IGNO Clients',
+        status: 'ACTIVE',
+      },
+      members: [
+        {
+          clientId: 'client-one',
+          code: 'IGNO-0001',
+          businessName: 'Store One',
+          ownerName: 'Owner One',
+          suggestedDeviceId: 'POS-DEVICE-ONE',
+          hasActiveStore: true,
+          currentSubscription: null,
+        },
+        {
+          clientId: 'client-two',
+          code: 'IGNO-0002',
+          businessName: 'Store Two',
+          ownerName: 'Owner Two',
+          suggestedDeviceId: 'POS-DEVICE-TWO',
+          hasActiveStore: true,
+          currentSubscription: {
+            id: 'subscription-two',
+            status: 'ACTIVE',
+            planName: 'Monthly',
+          },
+        },
+      ],
+    });
+
+    await expect(
+      service.groupCreationOptions('group-id'),
+    ).resolves.toMatchObject({
+      eligibleCount: 1,
+    });
   });
 
   it('blocks invalid lifecycle transitions', async () => {

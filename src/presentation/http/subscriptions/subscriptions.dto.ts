@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
   IsEnum,
   IsISO8601,
   IsOptional,
@@ -10,7 +14,9 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import type { SubscriptionStatus } from '../../../domain/subscriptions/subscription.repository.js';
 import { PageQueryDto } from '../common/page-query.dto.js';
 
@@ -68,6 +74,67 @@ export class CreateSubscriptionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  featureOverrides?: Record<string, unknown>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  webDashboardEnabled?: boolean;
+}
+
+export class GroupSubscriptionMemberDto {
+  @ApiProperty()
+  @IsUUID()
+  clientId!: string;
+
+  @ApiProperty({ example: 'POS-7F73A16C-1E56-4F29-93C9-77A25C061552' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,119}$/, {
+    message:
+      'deviceId must be 8-120 letters, numbers, dots, underscores, colons, or dashes',
+  })
+  deviceId!: string;
+}
+
+export class CreateGroupSubscriptionsDto {
+  @ApiProperty()
+  @IsUUID()
+  groupId!: string;
+
+  @ApiProperty()
+  @IsUUID()
+  planVersionId!: string;
+
+  @ApiProperty({ type: [GroupSubscriptionMemberDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ArrayUnique((member: GroupSubscriptionMemberDto) => member.clientId)
+  @ValidateNested({ each: true })
+  @Type(() => GroupSubscriptionMemberDto)
+  members!: GroupSubscriptionMemberDto[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsISO8601()
+  startsAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsISO8601()
+  expiresAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   notes?: string;
 
   @ApiPropertyOptional({ type: Object })

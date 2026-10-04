@@ -52,6 +52,17 @@ export interface CreateSubscriptionCommand {
   webDashboardEnabled?: boolean;
 }
 
+export interface CreateGroupSubscriptionsCommand {
+  groupId: string;
+  planVersionId: string;
+  members: Array<{ clientId: string; deviceId: string }>;
+  startsAt?: string;
+  expiresAt?: string;
+  notes?: string;
+  featureOverrides?: Record<string, unknown>;
+  webDashboardEnabled?: boolean;
+}
+
 @Injectable()
 export class SubscriptionsService {
   constructor(
@@ -80,21 +91,93 @@ export class SubscriptionsService {
     return subscription;
   }
 
+  async groupCreationOptions(groupId: string) {
+    const options = await this.subscriptions.groupCreationOptions(groupId);
+    if (!options) throw new NotFoundError('Client group');
+    if (options.group.status !== 'ACTIVE') {
+      throw new InvalidOperationError(
+        'Subscriptions cannot be created for an archived client group.',
+        'GROUP_NOT_ACTIVE',
+      );
+    }
+    return {
+      ...options,
+      eligibleCount: options.members.filter(
+        (member) => member.hasActiveStore && !member.currentSubscription,
+      ).length,
+    };
+  }
+
+  async createGroup(
+    input: CreateGroupSubscriptionsCommand,
+    actorId: string,
+    canManageFeatures = false,
+  ) {
+    this.assertFeatureAuthority(input, canManageFeatures);
+    const members = input.members.map((member) => ({
+      clientId: member.clientId,
+      deviceInstallationId: this.normalizeDeviceId(member.deviceId),
+    }));
+    const uniqueClientIds = new Set(members.map((member) => member.clientId));
+    const uniqueDeviceIds = new Set(
+      members.map((member) => member.deviceInstallationId),
+    );
+    if (
+      uniqueClientIds.size !== members.length ||
+      uniqueDeviceIds.size !== members.length
+    ) {
+      throw new InvalidOperationError(
+        'Each selected client and Device ID must be unique.',
+        'GROUP_SUBSCRIPTION_DUPLICATE_MEMBER',
+      );
+    }
+    const assignedDevices = await Promise.all(
+      members.map((member) =>
+        this.subscriptions.findByDeviceId(member.deviceInstallationId),
+      ),
+    );
+    if (assignedDevices.some(Boolean)) {
+      throw new ConflictError(
+        'One or more Device IDs are already assigned to a subscription.',
+        'DEVICE_ALREADY_ASSIGNED',
+      );
+    }
+
+    const terms = await this.creationTerms(input);
+    const created = await this.subscriptions.createGroup({
+      groupId: input.groupId,
+      members,
+      ...terms.snapshot,
+      notes: input.notes,
+      createdById: actorId,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'subscriptions.group_created',
+      resourceType: 'client_group',
+      resourceId: input.groupId,
+      metadata: {
+        subscriptionIds: created.map((subscription) => subscription.id),
+        clientIds: members.map((member) => member.clientId),
+        planVersionId: input.planVersionId,
+        count: created.length,
+        featureOverrides: terms.featureOverrides,
+        webDashboardEnabled: input.webDashboardEnabled,
+      },
+    });
+    return {
+      groupId: input.groupId,
+      createdCount: created.length,
+      items: created,
+    };
+  }
+
   async create(
     input: CreateSubscriptionCommand,
     actorId: string,
     canManageFeatures = false,
   ) {
-    if (
-      !canManageFeatures &&
-      (Object.keys(input.featureOverrides ?? {}).length > 0 ||
-        input.webDashboardEnabled !== undefined)
-    ) {
-      throw new InvalidOperationError(
-        'Only administrators can override subscription features.',
-        'FEATURE_OVERRIDE_FORBIDDEN',
-      );
-    }
+    this.assertFeatureAuthority(input, canManageFeatures);
     const deviceId = this.normalizeDeviceId(input.deviceId);
     const assignedDevice = await this.subscriptions.findByDeviceId(deviceId);
     if (assignedDevice) {
@@ -112,60 +195,11 @@ export class SubscriptionsService {
       );
     }
 
-    const version = await this.plans.findVersion(input.planVersionId);
-    if (!version) throw new NotFoundError('Plan version');
-    const plan = await this.plans.findById(version.planId);
-    if (!plan || plan.status !== 'ACTIVE' || !version.publishedAt) {
-      throw new InvalidOperationError(
-        'Subscriptions require a published plan version.',
-      );
-    }
-
-    const startsAt = input.startsAt ? new Date(input.startsAt) : new Date();
-    const expiresAt = input.expiresAt
-      ? new Date(input.expiresAt)
-      : this.calculateExpiry(startsAt, version.billingInterval);
-    if (!expiresAt) {
-      throw new InvalidOperationError(
-        'A custom billing interval requires an expiration date.',
-      );
-    }
-    if (expiresAt <= startsAt) {
-      throw new InvalidOperationError(
-        'Expiration must be after the start date.',
-      );
-    }
-
-    let featureOverrides = {};
-    try {
-      featureOverrides = validateFeatureMods(input.featureOverrides ?? {});
-    } catch (error) {
-      throw new InvalidOperationError(
-        error instanceof Error
-          ? error.message
-          : 'Feature overrides are invalid.',
-        'INVALID_FEATURE_MODS',
-      );
-    }
-    const entitlements = {
-      ...version.features,
-      ...featureOverrides,
-      ...(input.webDashboardEnabled === undefined
-        ? {}
-        : { webDashboard: input.webDashboardEnabled }),
-    };
+    const terms = await this.creationTerms(input);
 
     const subscription = await this.subscriptions.create({
       clientId: client.id,
-      planVersionId: version.id,
-      startsAt,
-      renewsAt: expiresAt,
-      expiresAt,
-      amount: version.amount,
-      currency: version.currency,
-      billingInterval: version.billingInterval,
-      maxDevices: 1,
-      entitlements,
+      ...terms.snapshot,
       notes: input.notes,
       createdById: actorId,
       deviceInstallationId: deviceId,
@@ -176,7 +210,7 @@ export class SubscriptionsService {
       resourceType: 'subscription',
       resourceId: subscription.id,
       metadata: {
-        featureOverrides,
+        featureOverrides: terms.featureOverrides,
         webDashboardEnabled: input.webDashboardEnabled,
       },
     });
@@ -507,6 +541,87 @@ export class SubscriptionsService {
 
   private invalidLicense(code: string, message: string, checkedAt: Date) {
     return { valid: false, code, message, checkedAt, subscription: null };
+  }
+
+  private assertFeatureAuthority(
+    input: {
+      featureOverrides?: Record<string, unknown>;
+      webDashboardEnabled?: boolean;
+    },
+    canManageFeatures: boolean,
+  ): void {
+    if (
+      !canManageFeatures &&
+      (Object.keys(input.featureOverrides ?? {}).length > 0 ||
+        input.webDashboardEnabled !== undefined)
+    ) {
+      throw new InvalidOperationError(
+        'Only administrators can override subscription features.',
+        'FEATURE_OVERRIDE_FORBIDDEN',
+      );
+    }
+  }
+
+  private async creationTerms(input: {
+    planVersionId: string;
+    startsAt?: string;
+    expiresAt?: string;
+    featureOverrides?: Record<string, unknown>;
+    webDashboardEnabled?: boolean;
+  }) {
+    const version = await this.plans.findVersion(input.planVersionId);
+    if (!version) throw new NotFoundError('Plan version');
+    const plan = await this.plans.findById(version.planId);
+    if (!plan || plan.status !== 'ACTIVE' || !version.publishedAt) {
+      throw new InvalidOperationError(
+        'Subscriptions require a published plan version.',
+      );
+    }
+    const startsAt = input.startsAt ? new Date(input.startsAt) : new Date();
+    const expiresAt = input.expiresAt
+      ? new Date(input.expiresAt)
+      : this.calculateExpiry(startsAt, version.billingInterval);
+    if (!expiresAt) {
+      throw new InvalidOperationError(
+        'A custom billing interval requires an expiration date.',
+      );
+    }
+    if (expiresAt <= startsAt) {
+      throw new InvalidOperationError(
+        'Expiration must be after the start date.',
+      );
+    }
+    let featureOverrides = {};
+    try {
+      featureOverrides = validateFeatureMods(input.featureOverrides ?? {});
+    } catch (error) {
+      throw new InvalidOperationError(
+        error instanceof Error
+          ? error.message
+          : 'Feature overrides are invalid.',
+        'INVALID_FEATURE_MODS',
+      );
+    }
+    return {
+      featureOverrides,
+      snapshot: {
+        planVersionId: version.id,
+        startsAt,
+        renewsAt: expiresAt,
+        expiresAt,
+        amount: version.amount,
+        currency: version.currency,
+        billingInterval: version.billingInterval,
+        maxDevices: 1,
+        entitlements: {
+          ...version.features,
+          ...featureOverrides,
+          ...(input.webDashboardEnabled === undefined
+            ? {}
+            : { webDashboard: input.webDashboardEnabled }),
+        },
+      },
+    };
   }
 
   private normalizeDeviceId(value: string): string {

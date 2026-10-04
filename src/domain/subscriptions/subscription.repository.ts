@@ -102,6 +102,46 @@ export interface CreateSubscriptionInput {
   deviceInstallationId: string;
 }
 
+export interface GroupSubscriptionMemberOption {
+  clientId: string;
+  code: string;
+  businessName: string;
+  ownerName: string | null;
+  suggestedDeviceId: string | null;
+  hasActiveStore: boolean;
+  currentSubscription: {
+    id: string;
+    status: SubscriptionStatus;
+    planName: string;
+  } | null;
+}
+
+export interface GroupSubscriptionOptions {
+  group: {
+    id: string;
+    code: string;
+    name: string;
+    status: 'ACTIVE' | 'ARCHIVED';
+  };
+  members: GroupSubscriptionMemberOption[];
+}
+
+export interface CreateGroupSubscriptionsInput {
+  groupId: string;
+  members: Array<{ clientId: string; deviceInstallationId: string }>;
+  planVersionId: string;
+  startsAt: Date;
+  renewsAt: Date | null;
+  expiresAt: Date | null;
+  amount: string;
+  currency: string;
+  billingInterval: BillingInterval;
+  maxDevices: number;
+  entitlements: Record<string, unknown>;
+  notes?: string;
+  createdById: string;
+}
+
 export const SUBSCRIPTION_REPOSITORY = Symbol('SUBSCRIPTION_REPOSITORY');
 
 export interface SubscriptionRepository {
@@ -119,6 +159,12 @@ export interface SubscriptionRepository {
     deviceInstallationId: string,
   ): Promise<SubscriptionRecord>;
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord>;
+  groupCreationOptions(
+    groupId: string,
+  ): Promise<GroupSubscriptionOptions | null>;
+  createGroup(
+    input: CreateGroupSubscriptionsInput,
+  ): Promise<SubscriptionRecord[]>;
   updateEntitlements(
     id: string,
     entitlements: Record<string, unknown>,

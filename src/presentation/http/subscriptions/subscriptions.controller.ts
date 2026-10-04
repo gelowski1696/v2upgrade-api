@@ -19,6 +19,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { RolesGuard } from '../auth/roles.guard.js';
 import {
   CreateSubscriptionDto,
+  CreateGroupSubscriptionsDto,
   RenewSubscriptionDto,
   SubscriptionActionDto,
   SubscriptionPageQueryDto,
@@ -66,6 +67,21 @@ export class SubscriptionsController {
       user.id,
       user.role === 'SUPER_ADMIN' || user.role === 'ADMIN',
     );
+  }
+
+  @Get('group/:groupId/options')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  groupCreationOptions(@Param('groupId') groupId: string) {
+    return this.subscriptions.groupCreationOptions(groupId);
+  }
+
+  @Post('group')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  createGroup(
+    @Body() input: CreateGroupSubscriptionsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.createGroup(input, user.id, true);
   }
 
   @Patch(':id/device')

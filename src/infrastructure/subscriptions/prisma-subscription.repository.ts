@@ -3,7 +3,9 @@ import type { Page, PageQuery } from '../../domain/shared/page.js';
 import { toPage } from '../../domain/shared/page.js';
 import type {
   CreateSubscriptionInput,
+  CreateGroupSubscriptionsInput,
   DeviceLicenseRecord,
+  GroupSubscriptionOptions,
   SubscriptionEventRecord,
   SubscriptionRecord,
   SubscriptionRepository,
@@ -208,6 +210,200 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
         include: subscriptionInclude,
       });
       return this.map(subscription);
+    } catch (error) {
+      this.rethrowDeviceConflict(error);
+    }
+  }
+
+  async groupCreationOptions(
+    groupId: string,
+  ): Promise<GroupSubscriptionOptions | null> {
+    const group = await this.prisma.clientGroup.findUnique({
+      where: { id: groupId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        status: true,
+        clients: {
+          where: { status: 'ACTIVE' },
+          orderBy: [{ businessName: 'asc' }, { code: 'asc' }],
+          select: {
+            id: true,
+            code: true,
+            businessName: true,
+            ownerName: true,
+            notes: true,
+            stores: {
+              where: { status: 'ACTIVE' },
+              take: 1,
+              select: { id: true },
+            },
+            subscriptions: {
+              where: { deletedAt: null, status: { not: 'CANCELLED' } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: {
+                id: true,
+                status: true,
+                planVersion: { select: { plan: { select: { name: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!group) return null;
+    return {
+      group: {
+        id: group.id,
+        code: group.code,
+        name: group.name,
+        status: group.status,
+      },
+      members: group.clients.map((client) => ({
+        clientId: client.id,
+        code: client.code,
+        businessName: client.businessName,
+        ownerName: client.ownerName,
+        suggestedDeviceId: this.legacyDeviceId(client.notes),
+        hasActiveStore: client.stores.length > 0,
+        currentSubscription: client.subscriptions[0]
+          ? {
+              id: client.subscriptions[0].id,
+              status: client.subscriptions[0].status,
+              planName: client.subscriptions[0].planVersion.plan.name,
+            }
+          : null,
+      })),
+    };
+  }
+
+  async createGroup(
+    input: CreateGroupSubscriptionsInput,
+  ): Promise<SubscriptionRecord[]> {
+    try {
+      return await this.prisma.$transaction(
+        async (transaction) => {
+          const group = await transaction.clientGroup.findFirst({
+            where: { id: input.groupId, status: 'ACTIVE' },
+            select: { id: true },
+          });
+          if (!group) {
+            throw new ConflictError(
+              'The client group is no longer active. Refresh and try again.',
+              'GROUP_NOT_ACTIVE',
+            );
+          }
+
+          const memberIds = input.members.map((member) => member.clientId);
+          const clients = await transaction.client.findMany({
+            where: {
+              id: { in: memberIds },
+              groupId: input.groupId,
+              status: 'ACTIVE',
+            },
+            select: {
+              id: true,
+              code: true,
+              stores: {
+                where: { status: 'ACTIVE' },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { id: true },
+              },
+              subscriptions: {
+                where: { deletedAt: null, status: { not: 'CANCELLED' } },
+                take: 1,
+                select: { id: true },
+              },
+            },
+          });
+          if (clients.length !== memberIds.length) {
+            throw new ConflictError(
+              'One or more selected clients are no longer active members of this group.',
+              'GROUP_MEMBERS_CHANGED',
+            );
+          }
+          const existingCodes = clients
+            .filter((client) => client.subscriptions.length > 0)
+            .map((client) => client.code);
+          if (existingCodes.length) {
+            throw new ConflictError(
+              `Subscriptions already exist for: ${existingCodes.join(', ')}. Refresh the group list.`,
+              'GROUP_MEMBER_ALREADY_SUBSCRIBED',
+            );
+          }
+          const missingStoreCodes = clients
+            .filter((client) => client.stores.length === 0)
+            .map((client) => client.code);
+          if (missingStoreCodes.length) {
+            throw new ConflictError(
+              `Active stores are missing for: ${missingStoreCodes.join(', ')}.`,
+              'GROUP_MEMBER_STORE_MISSING',
+            );
+          }
+
+          const installationIds = input.members.map(
+            (member) => member.deviceInstallationId,
+          );
+          const assignedDevices = await transaction.device.findMany({
+            where: { installationId: { in: installationIds } },
+            select: { installationId: true },
+          });
+          if (assignedDevices.length) {
+            throw new ConflictError(
+              `Device IDs are already assigned: ${assignedDevices.map((device) => device.installationId).join(', ')}.`,
+              'DEVICE_ALREADY_ASSIGNED',
+            );
+          }
+
+          const clientsById = new Map(
+            clients.map((client) => [client.id, client]),
+          );
+          const created: SubscriptionRecord[] = [];
+          for (const member of input.members) {
+            const client = clientsById.get(member.clientId);
+            if (!client?.stores[0]) continue;
+            const subscription = await transaction.subscription.create({
+              data: {
+                clientId: member.clientId,
+                planVersionId: input.planVersionId,
+                startsAt: input.startsAt,
+                renewsAt: input.renewsAt,
+                expiresAt: input.expiresAt,
+                amount: input.amount,
+                currency: input.currency,
+                billingInterval: input.billingInterval,
+                maxDevices: input.maxDevices,
+                entitlements: input.entitlements as Prisma.InputJsonValue,
+                notes: input.notes,
+                createdById: input.createdById,
+                devices: {
+                  create: {
+                    clientId: member.clientId,
+                    storeId: client.stores[0].id,
+                    installationId: member.deviceInstallationId,
+                    label: 'Primary POS',
+                    platform: 'windows',
+                  },
+                },
+                events: {
+                  create: {
+                    toStatus: 'DRAFT',
+                    reason: 'Subscription created with client group',
+                    actorId: input.createdById,
+                  },
+                },
+              },
+              include: subscriptionInclude,
+            });
+            created.push(this.map(subscription));
+          }
+          return created;
+        },
+        { maxWait: 10_000, timeout: 30_000 },
+      );
     } catch (error) {
       this.rethrowDeviceConflict(error);
     }
@@ -421,6 +617,11 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     createdAt: Date;
   }): SubscriptionRenewalRecord {
     return { ...renewal, amount: renewal.amount.toFixed(2) };
+  }
+
+  private legacyDeviceId(notes: string | null): string | null {
+    const match = notes?.match(/^Legacy device ID:\s*(.+)$/im);
+    return match?.[1]?.trim().toUpperCase() || null;
   }
 
   private rethrowDeviceConflict(error: unknown): never {
