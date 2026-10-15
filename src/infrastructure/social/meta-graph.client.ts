@@ -94,14 +94,14 @@ export class MetaGraphClient {
   async pageCredential(
     userAccessToken: string,
     pageId: string,
+    tasks: string[] = [],
   ): Promise<MetaPageCredential> {
     const url = this.graphUrl(`/${encodeURIComponent(pageId)}`);
-    url.searchParams.set('fields', 'id,name,access_token,tasks');
+    url.searchParams.set('fields', 'id,name,access_token');
     const page = await this.request<{
       id?: string;
       name?: string;
       access_token?: string;
-      tasks?: string[];
     }>(url, userAccessToken);
     if (!page.id || !page.name || !page.access_token) {
       throw new BadRequestException(
@@ -112,18 +112,17 @@ export class MetaGraphClient {
       id: page.id,
       name: page.name,
       accessToken: page.access_token,
-      tasks: page.tasks ?? [],
+      tasks,
       permissions: await this.permissions(userAccessToken),
     };
   }
 
   async inspectPageToken(pageAccessToken: string): Promise<MetaPageCredential> {
     const url = this.graphUrl('/me');
-    url.searchParams.set('fields', 'id,name,tasks');
+    url.searchParams.set('fields', 'id,name');
     const page = await this.request<{
       id?: string;
       name?: string;
-      tasks?: string[];
     }>(url, pageAccessToken);
     if (!page.id || !page.name) {
       throw new BadRequestException('The token is not a usable Page token.');
@@ -132,7 +131,7 @@ export class MetaGraphClient {
       id: page.id,
       name: page.name,
       accessToken: pageAccessToken,
-      tasks: page.tasks ?? [],
+      tasks: [],
       permissions: await this.permissions(pageAccessToken),
     };
   }

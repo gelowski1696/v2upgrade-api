@@ -244,7 +244,10 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     const candidates = Array.isArray(attempt.pageCandidates)
       ? attempt.pageCandidates
       : [];
-    if (!candidates.some((item) => this.objectString(item, 'id') === pageId)) {
+    const candidate = candidates.find(
+      (item) => this.objectString(item, 'id') === pageId,
+    );
+    if (!candidate) {
       throw new BadRequestException(
         'Select a Page returned by this connection attempt.',
       );
@@ -252,6 +255,7 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     const credential = await this.meta.pageCredential(
       this.vault.decrypt(attempt.userTokenCiphertext),
       pageId,
+      this.objectStringArray(candidate, 'tasks'),
     );
     const connection = await this.saveConnection(attempt, credential);
     await this.prisma.socialOauthAttempt.update({
@@ -1259,6 +1263,14 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     }
     const candidate = (value as Record<string, unknown>)[key];
     return typeof candidate === 'string' ? candidate : undefined;
+  }
+
+  private objectStringArray(value: unknown, key: string): string[] {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const candidate = (value as Record<string, unknown>)[key];
+    return Array.isArray(candidate)
+      ? candidate.filter((item): item is string => typeof item === 'string')
+      : [];
   }
 
   private errorMessage(error: unknown): string {
