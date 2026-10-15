@@ -22,6 +22,7 @@
     "db:generate:store": "prisma generate --config prisma-store.config.ts",
     "db:migrate": "prisma migrate dev --config prisma7.config.ts",
     "db:deploy": "prisma migrate deploy --config prisma7.config.ts",
+    "db:verify:fresh": "node scripts/verify-migrations-fresh.mjs",
     "db:studio": "prisma studio --config prisma7.config.ts",
     "admin:create": "tsx src/infrastructure/scripts/create-admin.ts",
     "admin:reset-password": "tsx src/infrastructure/scripts/reset-admin-password.ts",

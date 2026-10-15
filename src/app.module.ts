@@ -13,6 +13,7 @@ import { DeviceSyncModule } from './modules/device-sync.module.js';
 import { PortalModule } from './modules/portal.module.js';
 import { AnalyticsModule } from './modules/analytics.module.js';
 import { FinanceModule } from './modules/finance.module.js';
+import { SocialModule } from './modules/social.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { FinanceModule } from './modules/finance.module.js';
     PortalModule,
     AnalyticsModule,
     FinanceModule,
+    SocialModule,
   ],
 })
 export class AppModule {}

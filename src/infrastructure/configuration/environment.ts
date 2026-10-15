@@ -51,6 +51,15 @@ export function validateEnvironment(config: Environment): Environment {
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error('PORT must be a valid TCP port.');
   }
+  const socialEncryptionKey = stringValue(config.SOCIAL_TOKEN_ENCRYPTION_KEY);
+  if (
+    socialEncryptionKey &&
+    Buffer.from(socialEncryptionKey, 'base64').length !== 32
+  ) {
+    throw new Error(
+      'SOCIAL_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key.',
+    );
+  }
   const retainedPreviousSnapshots = numberValue(
     config.STORE_SNAPSHOT_RETAIN_PREVIOUS,
     2,
@@ -215,5 +224,13 @@ export function validateEnvironment(config: Environment): Environment {
       true,
       'WEB_REMEMBER_LOGIN_ENABLED',
     ),
+    SOCIAL_TOKEN_ENCRYPTION_KEY: socialEncryptionKey,
+    META_APP_ID: stringValue(config.META_APP_ID),
+    META_APP_SECRET: stringValue(config.META_APP_SECRET),
+    META_GRAPH_VERSION: stringValue(config.META_GRAPH_VERSION, 'v26.0'),
+    META_OAUTH_REDIRECT_URL: stringValue(config.META_OAUTH_REDIRECT_URL),
+    META_WEBHOOK_VERIFY_TOKEN: stringValue(config.META_WEBHOOK_VERIFY_TOKEN),
+    GEMINI_API_KEY: stringValue(config.GEMINI_API_KEY),
+    GEMINI_MODEL: stringValue(config.GEMINI_MODEL, 'gemini-2.5-flash-lite'),
   };
 }

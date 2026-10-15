@@ -19,6 +19,9 @@ export const FEATURE_MOD_KEYS = [
   'financialReport',
   'purchases',
   'discountReport',
+  'socialPublishing',
+  'messengerInbox',
+  'aiAssistance',
 ] as const;
 
 export type FeatureModKey = (typeof FEATURE_MOD_KEYS)[number];

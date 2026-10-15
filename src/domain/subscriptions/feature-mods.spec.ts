@@ -17,8 +17,13 @@ describe('subscription entitlements', () => {
         reports: true,
         summaryCsv: true,
         discountReport: false,
+        socialPublishing: true,
       }),
-    ).toEqual({ summaryCsv: true, discountReport: false });
+    ).toEqual({
+      summaryCsv: true,
+      discountReport: false,
+      socialPublishing: true,
+    });
     expect(() => validateFeatureMods({ unknownFeature: true })).toThrow(
       'Unknown feature mod',
     );

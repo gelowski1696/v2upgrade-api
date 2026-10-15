@@ -176,6 +176,56 @@ enum WebVitalName {
   CLS
 }
 
+enum SocialConnectionStatus {
+  ACTIVE
+  ACTION_REQUIRED
+  DISCONNECTED
+}
+
+enum SocialOauthStatus {
+  PENDING
+  AWAITING_PAGE
+  COMPLETE
+  FAILED
+  EXPIRED
+}
+
+enum SocialPostStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum SocialConversationStatus {
+  OPEN
+  WAITING
+  ASSIGNED
+  RESOLVED
+}
+
+enum SocialMessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum SocialMessageSender {
+  CUSTOMER
+  CASHIER
+  BOT
+  SYSTEM
+}
+
+enum SocialAutomationMode {
+  OFF
+  FAQ_ONLY
+  ASSISTED
+}
+
 model User {
   id                   String                     @id @default(uuid()) @db.Uuid
   username             String                     @unique @db.VarChar(80)
@@ -245,6 +295,7 @@ model Client {
   group               ClientGroup?               @relation(fields: [groupId], references: [id], onDelete: SetNull)
   paymentRecords      PaymentRecord[]
   billingStatements   BillingStatementDelivery[]
+  socialConnections   SocialConnection[]
 
   @@index([businessName])
   @@index([status])
@@ -291,6 +342,7 @@ model Store {
   salesTargets       PortalSalesTarget[]
   savedViews         PortalSavedView[]
   webAnalyticsEvents WebAnalyticsEvent[]
+  socialConnections  SocialConnection[]
 
   @@unique([clientId, code])
   @@index([clientId, status])
@@ -660,34 +712,228 @@ model SubscriptionEvent {
 }
 
 model Device {
-  id                   String                @id @default(uuid()) @db.Uuid
-  clientId             String                @map("client_id") @db.Uuid
-  subscriptionId       String?               @map("subscription_id") @db.Uuid
-  storeId              String                @map("store_id") @db.Uuid
-  installationId       String                @unique @map("installation_id") @db.VarChar(120)
-  fingerprintHash      String?               @map("fingerprint_hash") @db.VarChar(255)
-  label                String?               @db.VarChar(120)
-  platform             String                @db.VarChar(40)
-  appVersion           String?               @map("app_version") @db.VarChar(40)
-  status               DeviceStatus          @default(ACTIVE)
-  lastSeenAt           DateTime?             @map("last_seen_at") @db.Timestamptz(3)
-  revokedAt            DateTime?             @map("revoked_at") @db.Timestamptz(3)
-  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
-  client               Client                @relation(fields: [clientId], references: [id], onDelete: Restrict)
-  subscription         Subscription?         @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  store                Store                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  id                   String                  @id @default(uuid()) @db.Uuid
+  clientId             String                  @map("client_id") @db.Uuid
+  subscriptionId       String?                 @map("subscription_id") @db.Uuid
+  storeId              String                  @map("store_id") @db.Uuid
+  installationId       String                  @unique @map("installation_id") @db.VarChar(120)
+  fingerprintHash      String?                 @map("fingerprint_hash") @db.VarChar(255)
+  label                String?                 @db.VarChar(120)
+  platform             String                  @db.VarChar(40)
+  appVersion           String?                 @map("app_version") @db.VarChar(40)
+  status               DeviceStatus            @default(ACTIVE)
+  lastSeenAt           DateTime?               @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt            DateTime?               @map("revoked_at") @db.Timestamptz(3)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client               Client                  @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  subscription         Subscription?           @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  store                Store                   @relation(fields: [storeId], references: [id], onDelete: Restrict)
   licenseLeases        LicenseLease[]
   portalInvitations    PortalInvitation[]
   portalPasswordResets PortalPasswordReset[]
   snapshots            StoreSnapshot[]
   uploadSessions       SyncUploadSession[]
+  socialOauthAttempts  SocialOauthAttempt[]
+  socialPresence       SocialCashierPresence[]
 
   @@unique([subscriptionId])
   @@index([clientId, status])
   @@index([subscriptionId, status])
   @@index([storeId, status])
   @@map("devices")
+}
+
+model SocialConnection {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  clientId           String                  @map("client_id") @db.Uuid
+  storeId            String                  @map("store_id") @db.Uuid
+  provider           String                  @default("META") @db.VarChar(20)
+  pageId             String                  @map("page_id") @db.VarChar(120)
+  pageName           String                  @map("page_name") @db.VarChar(180)
+  status             SocialConnectionStatus  @default(ACTIVE)
+  tokenCiphertext    String                  @map("token_ciphertext")
+  tokenExpiresAt     DateTime?               @map("token_expires_at") @db.Timestamptz(3)
+  grantedPermissions String[]                @default([]) @map("granted_permissions")
+  pageTasks          String[]                @default([]) @map("page_tasks")
+  lastCheckedAt      DateTime?               @map("last_checked_at") @db.Timestamptz(3)
+  lastError          String?                 @map("last_error")
+  connectedBy        String                  @map("connected_by") @db.VarChar(120)
+  connectedAt        DateTime                @default(now()) @map("connected_at") @db.Timestamptz(3)
+  disconnectedAt     DateTime?               @map("disconnected_at") @db.Timestamptz(3)
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client             Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  store              Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  templates          SocialPostTemplate[]
+  posts              SocialPost[]
+  conversations      SocialConversation[]
+  messages           SocialMessage[]
+  webhookEvents      SocialWebhookEvent[]
+  faqs               SocialFaq[]
+  cashierPresence    SocialCashierPresence[]
+
+  @@unique([storeId, pageId])
+  @@index([clientId, storeId, status])
+  @@map("social_connections")
+}
+
+model SocialOauthAttempt {
+  id                  String            @id @default(uuid()) @db.Uuid
+  clientId            String            @map("client_id") @db.Uuid
+  storeId             String            @map("store_id") @db.Uuid
+  deviceId            String            @map("device_id") @db.Uuid
+  stateHash           String            @unique @map("state_hash") @db.Char(64)
+  status              SocialOauthStatus @default(PENDING)
+  actor               String            @db.VarChar(120)
+  userTokenCiphertext String?           @map("user_token_ciphertext")
+  pageCandidates      Json              @default("[]") @map("page_candidates")
+  connectionId        String?           @map("connection_id") @db.Uuid
+  errorMessage        String?           @map("error_message")
+  expiresAt           DateTime          @map("expires_at") @db.Timestamptz(3)
+  completedAt         DateTime?         @map("completed_at") @db.Timestamptz(3)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  device              Device            @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, status, createdAt])
+  @@map("social_oauth_attempts")
+}
+
+model SocialPostTemplate {
+  id           String           @id @default(uuid()) @db.Uuid
+  connectionId String           @map("connection_id") @db.Uuid
+  name         String           @db.VarChar(120)
+  body         String
+  autoPublish  Boolean          @default(false) @map("auto_publish")
+  locked       Boolean          @default(false)
+  createdBy    String           @map("created_by") @db.VarChar(120)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection   SocialConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  posts        SocialPost[]
+
+  @@unique([connectionId, name])
+  @@index([connectionId, updatedAt])
+  @@map("social_post_templates")
+}
+
+model SocialPost {
+  id                 String              @id @default(uuid()) @db.Uuid
+  connectionId       String              @map("connection_id") @db.Uuid
+  templateId         String?             @map("template_id") @db.Uuid
+  content            String
+  status             SocialPostStatus    @default(DRAFT)
+  scheduledAt        DateTime?           @map("scheduled_at") @db.Timestamptz(3)
+  publishedAt        DateTime?           @map("published_at") @db.Timestamptz(3)
+  providerPostId     String?             @map("provider_post_id") @db.VarChar(180)
+  idempotencyKey     String              @unique @map("idempotency_key") @db.VarChar(120)
+  createdBy          String              @map("created_by") @db.VarChar(120)
+  approvedBy         String?             @map("approved_by") @db.VarChar(120)
+  approvedAt         DateTime?           @map("approved_at") @db.Timestamptz(3)
+  attemptCount       Int                 @default(0) @map("attempt_count")
+  lastAttemptAt      DateTime?           @map("last_attempt_at") @db.Timestamptz(3)
+  lastError          String?             @map("last_error")
+  generationMetadata Json                @default("{}") @map("generation_metadata")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection         SocialConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  template           SocialPostTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId, status, scheduledAt])
+  @@map("social_posts")
+}
+
+model SocialConversation {
+  id              String                   @id @default(uuid()) @db.Uuid
+  connectionId    String                   @map("connection_id") @db.Uuid
+  participantId   String                   @map("participant_id") @db.VarChar(180)
+  participantName String?                  @map("participant_name") @db.VarChar(180)
+  status          SocialConversationStatus @default(OPEN)
+  automationMode  SocialAutomationMode     @default(FAQ_ONLY) @map("automation_mode")
+  assignedTo      String?                  @map("assigned_to") @db.VarChar(120)
+  assignedAt      DateTime?                @map("assigned_at") @db.Timestamptz(3)
+  lastInboundAt   DateTime?                @map("last_inbound_at") @db.Timestamptz(3)
+  lastMessageAt   DateTime                 @default(now()) @map("last_message_at") @db.Timestamptz(3)
+  unreadCount     Int                      @default(0) @map("unread_count")
+  resolvedAt      DateTime?                @map("resolved_at") @db.Timestamptz(3)
+  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection      SocialConnection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  messages        SocialMessage[]
+
+  @@unique([connectionId, participantId])
+  @@index([connectionId, status, lastMessageAt])
+  @@map("social_conversations")
+}
+
+model SocialMessage {
+  id                String                 @id @default(uuid()) @db.Uuid
+  connectionId      String                 @map("connection_id") @db.Uuid
+  conversationId    String                 @map("conversation_id") @db.Uuid
+  providerMessageId String?                @map("provider_message_id") @db.VarChar(220)
+  direction         SocialMessageDirection
+  sender            SocialMessageSender
+  senderName        String?                @map("sender_name") @db.VarChar(120)
+  text              String?
+  attachments       Json                   @default("[]")
+  deliveryStatus    String                 @default("RECEIVED") @map("delivery_status") @db.VarChar(30)
+  sentAt            DateTime               @map("sent_at") @db.Timestamptz(3)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  connection        SocialConnection       @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  conversation      SocialConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, providerMessageId])
+  @@index([conversationId, sentAt])
+  @@map("social_messages")
+}
+
+model SocialFaq {
+  id           String           @id @default(uuid()) @db.Uuid
+  connectionId String           @map("connection_id") @db.Uuid
+  question     String           @db.VarChar(240)
+  answer       String
+  keywords     String[]         @default([])
+  enabled      Boolean          @default(true)
+  createdBy    String           @map("created_by") @db.VarChar(120)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection   SocialConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, enabled])
+  @@map("social_faqs")
+}
+
+model SocialCashierPresence {
+  id           String           @id @default(uuid()) @db.Uuid
+  connectionId String           @map("connection_id") @db.Uuid
+  deviceId     String           @map("device_id") @db.Uuid
+  username     String           @db.VarChar(120)
+  displayName  String           @map("display_name") @db.VarChar(160)
+  availability String           @default("AVAILABLE") @db.VarChar(20)
+  lastSeenAt   DateTime         @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  connection   SocialConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  device       Device           @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, deviceId, username])
+  @@index([connectionId, availability, lastSeenAt])
+  @@map("social_cashier_presence")
+}
+
+model SocialWebhookEvent {
+  id                  String            @id @default(uuid()) @db.Uuid
+  connectionId        String?           @map("connection_id") @db.Uuid
+  eventHash           String            @unique @map("event_hash") @db.Char(64)
+  status              String            @default("RECEIVED") @db.VarChar(30)
+  payload             Json
+  attemptCount        Int               @default(0) @map("attempt_count")
+  lastError           String?           @map("last_error")
+  receivedAt          DateTime          @default(now()) @map("received_at") @db.Timestamptz(3)
+  processingStartedAt DateTime?         @map("processing_started_at") @db.Timestamptz(3)
+  processedAt         DateTime?         @map("processed_at") @db.Timestamptz(3)
+  connection          SocialConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([status, receivedAt])
+  @@map("social_webhook_events")
 }
 
 model StoreSnapshot {
