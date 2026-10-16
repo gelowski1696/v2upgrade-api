@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsISO8601,
   IsIn,
@@ -151,6 +153,10 @@ export class SaveFaqDto extends ActorDto {
       ? value.filter((item): item is string => typeof item === 'string')
       : [],
   )
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
   keywords: string[] = [];
 
   @IsBoolean()
