@@ -21,6 +21,11 @@ export interface MetaPageCredential extends MetaPageCandidate {
   permissions: string[];
 }
 
+export interface MetaUserProfile {
+  id: string;
+  name: string | null;
+}
+
 @Injectable()
 export class MetaGraphClient {
   constructor(private readonly config: ConfigService) {}
@@ -176,6 +181,25 @@ export class MetaGraphClient {
       throw new BadGatewayException('Meta did not return a message ID.');
     }
     return value.message_id;
+  }
+
+  async userProfile(
+    participantId: string,
+    pageAccessToken: string,
+  ): Promise<MetaUserProfile> {
+    const url = this.graphUrl(`/${encodeURIComponent(participantId)}`);
+    url.searchParams.set('fields', 'id,name');
+    const value = await this.request<{ id?: string; name?: string }>(
+      url,
+      pageAccessToken,
+    );
+    if (!value.id) {
+      throw new BadGatewayException('Meta did not return a user profile ID.');
+    }
+    return {
+      id: value.id,
+      name: value.name?.trim() || null,
+    };
   }
 
   private async permissions(accessToken: string): Promise<string[]> {

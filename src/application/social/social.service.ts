@@ -924,6 +924,18 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
               resolvedAt: null,
             },
           });
+          if (!conversation.participantName) {
+            const participantName = await this.participantName(
+              connection,
+              participantId,
+            );
+            if (participantName) {
+              await this.prisma.socialConversation.update({
+                where: { id: conversation.id },
+                data: { participantName },
+              });
+            }
+          }
           if (message.mid) {
             await this.prisma.socialMessage.upsert({
               where: {
@@ -970,6 +982,24 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
           processingStartedAt: null,
         },
       });
+    }
+  }
+
+  private async participantName(
+    connection: { id: string; tokenCiphertext: string },
+    participantId: string,
+  ): Promise<string | null> {
+    try {
+      const profile = await this.meta.userProfile(
+        participantId,
+        this.vault.decrypt(connection.tokenCiphertext),
+      );
+      return profile.name?.slice(0, 180) || null;
+    } catch (error) {
+      this.logger.warn(
+        `Messenger profile lookup failed for connection ${connection.id}: ${this.errorMessage(error)}`,
+      );
+      return null;
     }
   }
 

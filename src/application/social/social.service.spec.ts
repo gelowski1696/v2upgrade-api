@@ -38,3 +38,120 @@ describe('SocialService conversations', () => {
     );
   });
 });
+
+describe('SocialService Messenger webhooks', () => {
+  const webhookEvent = {
+    id: 'event-1',
+    payload: {
+      object: 'page',
+      entry: [
+        {
+          id: 'page-1',
+          messaging: [
+            {
+              sender: { id: 'psid-1' },
+              recipient: { id: 'page-1' },
+              timestamp: 1_797_000_000_000,
+              message: { mid: 'message-1', text: 'Hello' },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  function webhookService(options?: { profileError?: Error }) {
+    const updateConversation = jest.fn().mockResolvedValue({});
+    const updateWebhook = jest.fn().mockResolvedValue({});
+    const upsertMessage = jest.fn().mockResolvedValue({});
+    const prisma = {
+      socialWebhookEvent: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(webhookEvent),
+        update: updateWebhook,
+      },
+      socialConnection: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'connection-1',
+          pageId: 'page-1',
+          tokenCiphertext: 'encrypted-page-token',
+        }),
+      },
+      socialMessage: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: upsertMessage,
+      },
+      socialConversation: {
+        upsert: jest.fn().mockResolvedValue({
+          id: 'conversation-1',
+          participantId: 'psid-1',
+          participantName: null,
+          assignedTo: null,
+          automationMode: 'OFF',
+        }),
+        update: updateConversation,
+      },
+    } as unknown as PrismaService;
+    const userProfile = options?.profileError
+      ? jest.fn().mockRejectedValue(options.profileError)
+      : jest.fn().mockResolvedValue({ id: 'psid-1', name: 'Jamie Customer' });
+    const meta = { userProfile } as unknown as MetaGraphClient;
+    const vault = {
+      decrypt: jest.fn().mockReturnValue('page-token'),
+    } as unknown as SocialTokenVault;
+    return {
+      prisma,
+      updateWebhook,
+      upsertMessage,
+      userProfile,
+      updateConversation,
+      service: new SocialService(
+        prisma,
+        {} as ConfigService,
+        vault,
+        meta,
+        {} as GeminiTextProvider,
+      ),
+    };
+  }
+
+  async function processWebhook(service: SocialService) {
+    await (
+      service as unknown as {
+        processWebhookEvent(id: string): Promise<void>;
+      }
+    ).processWebhookEvent('event-1');
+  }
+
+  it('stores the Messenger participant name returned by Meta', async () => {
+    const { service, userProfile, updateConversation } = webhookService();
+
+    await processWebhook(service);
+
+    expect(userProfile).toHaveBeenCalledWith('psid-1', 'page-token');
+    expect(updateConversation).toHaveBeenCalledWith({
+      where: { id: 'conversation-1' },
+      data: { participantName: 'Jamie Customer' },
+    });
+  });
+
+  it('continues processing when Meta does not expose the profile', async () => {
+    const { service, updateWebhook, upsertMessage, updateConversation } =
+      webhookService({
+        profileError: new Error('Profile unavailable'),
+      });
+
+    await processWebhook(service);
+
+    expect(updateConversation).not.toHaveBeenCalled();
+    expect(upsertMessage).toHaveBeenCalled();
+    expect(updateWebhook).toHaveBeenLastCalledWith({
+      where: { id: 'event-1' },
+      data: {
+        status: 'PROCESSED',
+        processedAt: expect.any(Date) as Date,
+        processingStartedAt: null,
+      },
+    });
+  });
+});
