@@ -540,6 +540,7 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     const values = await this.prisma.socialConversation.findMany({
       where: {
         connection: { clientId: device.clientId, storeId: device.storeId },
+        status: { not: SocialConversationStatus.RESOLVED },
         ...(connectionId ? { connectionId } : {}),
       },
       include: { messages: { orderBy: { sentAt: 'desc' }, take: 1 } },
