@@ -1,7 +1,28 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { SaveFaqDto } from './social.dto.js';
+import { GeneratePostDto, SaveFaqDto } from './social.dto.js';
+
+describe('GeneratePostDto', () => {
+  it('accepts the authenticated desktop actor field', async () => {
+    const input = plainToInstance(GeneratePostDto, {
+      actor: 'admin',
+      connectionId: '10000000-0000-4000-8000-000000000001',
+      template: 'Create a post for {{store_name}}.',
+      facts: { store_name: 'Example Store' },
+      tone: 'clear and helpful',
+      language: 'English',
+    });
+
+    const errors = await validate(input, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    expect(errors).toHaveLength(0);
+    expect(input.actor).toBe('admin');
+  });
+});
 
 describe('SaveFaqDto', () => {
   it('accepts validated FAQ match keywords', async () => {

@@ -58,7 +58,7 @@ export class SaveTemplateDto extends ActorDto {
   autoPublish!: boolean;
 }
 
-export class GeneratePostDto {
+export class GeneratePostDto extends ActorDto {
   @IsUUID()
   connectionId!: string;
 
