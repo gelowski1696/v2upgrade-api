@@ -24,6 +24,7 @@ export interface MetaPageCredential extends MetaPageCandidate {
 export interface MetaUserProfile {
   id: string;
   name: string | null;
+  pictureUrl: string | null;
 }
 
 @Injectable()
@@ -188,17 +189,19 @@ export class MetaGraphClient {
     pageAccessToken: string,
   ): Promise<MetaUserProfile> {
     const url = this.graphUrl(`/${encodeURIComponent(participantId)}`);
-    url.searchParams.set('fields', 'id,name');
-    const value = await this.request<{ id?: string; name?: string }>(
-      url,
-      pageAccessToken,
-    );
+    url.searchParams.set('fields', 'id,name,picture');
+    const value = await this.request<{
+      id?: string;
+      name?: string;
+      picture?: { data?: { url?: string } };
+    }>(url, pageAccessToken);
     if (!value.id) {
       throw new BadGatewayException('Meta did not return a user profile ID.');
     }
     return {
       id: value.id,
       name: value.name?.trim() || null,
+      pictureUrl: value.picture?.data?.url?.trim() || null,
     };
   }
 

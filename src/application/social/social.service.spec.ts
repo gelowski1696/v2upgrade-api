@@ -60,7 +60,11 @@ describe('SocialService Messenger webhooks', () => {
     },
   };
 
-  function webhookService(options?: { profileError?: Error }) {
+  function webhookService(options?: {
+    profileError?: Error;
+    participantName?: string;
+    participantPictureUrl?: string;
+  }) {
     const updateConversation = jest.fn().mockResolvedValue({});
     const updateWebhook = jest.fn().mockResolvedValue({});
     const upsertMessage = jest.fn().mockResolvedValue({});
@@ -85,7 +89,8 @@ describe('SocialService Messenger webhooks', () => {
         upsert: jest.fn().mockResolvedValue({
           id: 'conversation-1',
           participantId: 'psid-1',
-          participantName: null,
+          participantName: options?.participantName ?? null,
+          participantPictureUrl: options?.participantPictureUrl ?? null,
           assignedTo: null,
           automationMode: 'OFF',
         }),
@@ -94,7 +99,11 @@ describe('SocialService Messenger webhooks', () => {
     } as unknown as PrismaService;
     const userProfile = options?.profileError
       ? jest.fn().mockRejectedValue(options.profileError)
-      : jest.fn().mockResolvedValue({ id: 'psid-1', name: 'Jamie Customer' });
+      : jest.fn().mockResolvedValue({
+          id: 'psid-1',
+          name: 'Jamie Customer',
+          pictureUrl: 'https://platform-lookaside.fbsbx.com/customer.jpg',
+        });
     const meta = { userProfile } as unknown as MetaGraphClient;
     const vault = {
       decrypt: jest.fn().mockReturnValue('page-token'),
@@ -131,7 +140,11 @@ describe('SocialService Messenger webhooks', () => {
     expect(userProfile).toHaveBeenCalledWith('psid-1', 'page-token');
     expect(updateConversation).toHaveBeenCalledWith({
       where: { id: 'conversation-1' },
-      data: { participantName: 'Jamie Customer' },
+      data: {
+        participantName: 'Jamie Customer',
+        participantPictureUrl:
+          'https://platform-lookaside.fbsbx.com/customer.jpg',
+      },
     });
   });
 
@@ -151,6 +164,23 @@ describe('SocialService Messenger webhooks', () => {
         status: 'PROCESSED',
         processedAt: expect.any(Date) as Date,
         processingStartedAt: null,
+      },
+    });
+  });
+
+  it('adds a picture to an existing named conversation', async () => {
+    const { service, userProfile, updateConversation } = webhookService({
+      participantName: 'Jamie Customer',
+    });
+
+    await processWebhook(service);
+
+    expect(userProfile).toHaveBeenCalledWith('psid-1', 'page-token');
+    expect(updateConversation).toHaveBeenCalledWith({
+      where: { id: 'conversation-1' },
+      data: {
+        participantPictureUrl:
+          'https://platform-lookaside.fbsbx.com/customer.jpg',
       },
     });
   });

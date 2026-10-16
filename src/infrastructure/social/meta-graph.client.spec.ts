@@ -42,10 +42,19 @@ describe('MetaGraphClient', () => {
 
   it('gets a Messenger participant name with the Page access token', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: 'psid-1', name: 'Jamie Customer' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
+      new Response(
+        JSON.stringify({
+          id: 'psid-1',
+          name: 'Jamie Customer',
+          picture: {
+            data: { url: 'https://platform-lookaside.fbsbx.com/customer.jpg' },
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
     );
     const client = new MetaGraphClient(
       new ConfigService({ META_GRAPH_VERSION: 'v26.0' }),
@@ -56,10 +65,14 @@ describe('MetaGraphClient', () => {
     const requestUrl = fetchMock.mock.calls[0]?.[0] as URL;
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(requestUrl.pathname).toBe('/v26.0/psid-1');
-    expect(requestUrl.searchParams.get('fields')).toBe('id,name');
+    expect(requestUrl.searchParams.get('fields')).toBe('id,name,picture');
     expect(new Headers(requestInit.headers).get('authorization')).toBe(
       'Bearer page-token',
     );
-    expect(result).toEqual({ id: 'psid-1', name: 'Jamie Customer' });
+    expect(result).toEqual({
+      id: 'psid-1',
+      name: 'Jamie Customer',
+      pictureUrl: 'https://platform-lookaside.fbsbx.com/customer.jpg',
+    });
   });
 });

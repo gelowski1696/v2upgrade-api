@@ -924,15 +924,29 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
               resolvedAt: null,
             },
           });
-          if (!conversation.participantName) {
-            const participantName = await this.participantName(
+          if (
+            !conversation.participantName ||
+            !conversation.participantPictureUrl
+          ) {
+            const participantProfile = await this.participantProfile(
               connection,
               participantId,
             );
-            if (participantName) {
+            const participantName =
+              conversation.participantName === null
+                ? participantProfile?.name
+                : null;
+            const participantPictureUrl =
+              conversation.participantPictureUrl === null
+                ? participantProfile?.pictureUrl
+                : null;
+            if (participantName || participantPictureUrl) {
               await this.prisma.socialConversation.update({
                 where: { id: conversation.id },
-                data: { participantName },
+                data: {
+                  ...(participantName ? { participantName } : {}),
+                  ...(participantPictureUrl ? { participantPictureUrl } : {}),
+                },
               });
             }
           }
@@ -985,16 +999,22 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async participantName(
+  private async participantProfile(
     connection: { id: string; tokenCiphertext: string },
     participantId: string,
-  ): Promise<string | null> {
+  ): Promise<{ name: string | null; pictureUrl: string | null } | null> {
     try {
       const profile = await this.meta.userProfile(
         participantId,
         this.vault.decrypt(connection.tokenCiphertext),
       );
-      return profile.name?.slice(0, 180) || null;
+      const pictureUrl = profile.pictureUrl?.startsWith('https://')
+        ? profile.pictureUrl
+        : null;
+      return {
+        name: profile.name?.slice(0, 180) || null,
+        pictureUrl,
+      };
     } catch (error) {
       this.logger.warn(
         `Messenger profile lookup failed for connection ${connection.id}: ${this.errorMessage(error)}`,

@@ -844,22 +844,23 @@ model SocialPost {
 }
 
 model SocialConversation {
-  id              String                   @id @default(uuid()) @db.Uuid
-  connectionId    String                   @map("connection_id") @db.Uuid
-  participantId   String                   @map("participant_id") @db.VarChar(180)
-  participantName String?                  @map("participant_name") @db.VarChar(180)
-  status          SocialConversationStatus @default(OPEN)
-  automationMode  SocialAutomationMode     @default(FAQ_ONLY) @map("automation_mode")
-  assignedTo      String?                  @map("assigned_to") @db.VarChar(120)
-  assignedAt      DateTime?                @map("assigned_at") @db.Timestamptz(3)
-  lastInboundAt   DateTime?                @map("last_inbound_at") @db.Timestamptz(3)
-  lastMessageAt   DateTime                 @default(now()) @map("last_message_at") @db.Timestamptz(3)
-  unreadCount     Int                      @default(0) @map("unread_count")
-  resolvedAt      DateTime?                @map("resolved_at") @db.Timestamptz(3)
-  createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
-  connection      SocialConnection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  messages        SocialMessage[]
+  id                    String                   @id @default(uuid()) @db.Uuid
+  connectionId          String                   @map("connection_id") @db.Uuid
+  participantId         String                   @map("participant_id") @db.VarChar(180)
+  participantName       String?                  @map("participant_name") @db.VarChar(180)
+  participantPictureUrl String?                  @map("participant_picture_url")
+  status                SocialConversationStatus @default(OPEN)
+  automationMode        SocialAutomationMode     @default(FAQ_ONLY) @map("automation_mode")
+  assignedTo            String?                  @map("assigned_to") @db.VarChar(120)
+  assignedAt            DateTime?                @map("assigned_at") @db.Timestamptz(3)
+  lastInboundAt         DateTime?                @map("last_inbound_at") @db.Timestamptz(3)
+  lastMessageAt         DateTime                 @default(now()) @map("last_message_at") @db.Timestamptz(3)
+  unreadCount           Int                      @default(0) @map("unread_count")
+  resolvedAt            DateTime?                @map("resolved_at") @db.Timestamptz(3)
+  createdAt             DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection            SocialConnection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  messages              SocialMessage[]
 
   @@unique([connectionId, participantId])
   @@index([connectionId, status, lastMessageAt])
