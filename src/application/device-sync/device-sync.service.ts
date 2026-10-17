@@ -14,6 +14,7 @@ import { createWriteStream, promises as fs } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { once } from 'node:events';
 import type { Readable } from 'node:stream';
+import { createGunzip } from 'node:zlib';
 import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { StorePrismaClientFactory } from '../../infrastructure/store-database/store-prisma-client.factory.js';
@@ -112,6 +113,7 @@ export class DeviceSyncService implements OnModuleInit {
     sessionId: string,
     stream: Readable,
     contentLength?: number,
+    contentEncoding?: string,
   ) {
     const session = await this.getOwnedSession(device, sessionId);
     if (!['CREATED', 'UPLOADING'].includes(session.status)) {
@@ -125,7 +127,20 @@ export class DeviceSyncService implements OnModuleInit {
       throw new ConflictException('Upload session has expired.');
     }
     const expected = Number(session.expectedSize);
-    if (contentLength && contentLength !== expected) {
+    const encoding = (contentEncoding || 'identity').trim().toLowerCase();
+    if (!['identity', 'gzip'].includes(encoding)) {
+      throw new UnprocessableEntityException(
+        'Snapshot content encoding is not supported.',
+      );
+    }
+    if (contentLength && contentLength > this.maximumBytes) {
+      throw new PayloadTooLargeException('Upload exceeds the upload limit.');
+    }
+    if (
+      encoding === 'identity' &&
+      contentLength &&
+      contentLength !== expected
+    ) {
       throw new UnprocessableEntityException('Upload size does not match.');
     }
 
@@ -139,8 +154,10 @@ export class DeviceSyncService implements OnModuleInit {
       data: { status: 'UPLOADING', receivedBytes: 0 },
     });
 
+    const decodedStream =
+      encoding === 'gzip' ? stream.pipe(createGunzip()) : stream;
     try {
-      for await (const value of stream) {
+      for await (const value of decodedStream) {
         const chunk = Buffer.isBuffer(value)
           ? value
           : Buffer.from(value as Uint8Array);

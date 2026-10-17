@@ -42,12 +42,14 @@ export class DeviceSyncController {
     @Param('sessionId', new ParseUUIDPipe({ version: '4' })) sessionId: string,
     @Req() request: Request,
     @Headers('content-length') contentLength?: string,
+    @Headers('content-encoding') contentEncoding?: string,
   ) {
     return this.sync.upload(
       device,
       sessionId,
       request,
       contentLength ? Number(contentLength) : undefined,
+      contentEncoding,
     );
   }
 
