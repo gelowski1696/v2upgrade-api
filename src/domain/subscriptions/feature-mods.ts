@@ -22,6 +22,9 @@ export const FEATURE_MOD_KEYS = [
   'socialPublishing',
   'messengerInbox',
   'aiAssistance',
+  'socialCommerce',
+  'socialCustomerLinking',
+  'socialCampaigns',
 ] as const;
 
 export type FeatureModKey = (typeof FEATURE_MOD_KEYS)[number];

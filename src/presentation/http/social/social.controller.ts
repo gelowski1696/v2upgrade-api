@@ -24,15 +24,21 @@ import { SocialEntitlementGuard } from './social-entitlement.guard.js';
 import {
   ActorDto,
   AutomationDto,
+  CreateCampaignDto,
   CreatePostDto,
   GeneratePostDto,
   HeartbeatDto,
+  ImportCompleteDto,
+  ImportFailDto,
+  LinkCustomerDto,
   ManualTokenDto,
   ReplyDto,
   SaveFaqDto,
+  SaveQuoteDto,
   SaveTemplateDto,
   SelectPageDto,
   SocialListQueryDto,
+  SocialSearchQueryDto,
 } from './social.dto.js';
 
 @ApiTags('Social Hub')
@@ -253,6 +259,156 @@ export class DeviceSocialController {
     @Body() input: SaveFaqDto,
   ) {
     return this.social.saveFaq(device, input);
+  }
+
+  @Get('commerce/catalog')
+  commerceCatalog(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Query() query: SocialSearchQueryDto,
+  ) {
+    if (!query.connectionId) {
+      throw new ForbiddenException('A Facebook Page connection is required.');
+    }
+    return this.social.commerceCatalog(device, query.connectionId, query.q);
+  }
+
+  @Get('commerce/customers')
+  commerceCustomers(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Query() query: SocialSearchQueryDto,
+  ) {
+    if (!query.connectionId) {
+      throw new ForbiddenException('A Facebook Page connection is required.');
+    }
+    return this.social.commerceCustomers(device, query.connectionId, query.q);
+  }
+
+  @Get('conversations/:id/commerce')
+  commerceContext(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.social.commerceContext(device, id);
+  }
+
+  @Post('conversations/:id/customer-link')
+  linkCommerceCustomer(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: LinkCustomerDto,
+  ) {
+    return this.social.linkCommerceCustomer(device, id, input);
+  }
+
+  @Delete('conversations/:id/customer-link')
+  unlinkCommerceCustomer(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ActorDto,
+  ) {
+    return this.social.unlinkCommerceCustomer(device, id, input.actor);
+  }
+
+  @Post('commerce/quotes')
+  saveCommerceQuote(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Body() input: SaveQuoteDto,
+  ) {
+    return this.social.saveCommerceQuote(device, input);
+  }
+
+  @Post('commerce/quotes/:id/send')
+  sendCommerceQuote(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ActorDto,
+  ) {
+    return this.social.sendCommerceQuote(device, id, input.actor);
+  }
+
+  @Post('commerce/quotes/:id/accept')
+  acceptCommerceQuote(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ActorDto,
+  ) {
+    return this.social.acceptCommerceQuote(device, id, input.actor);
+  }
+
+  @Post('commerce/quotes/:id/cancel')
+  cancelCommerceQuote(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ActorDto,
+  ) {
+    return this.social.cancelCommerceQuote(device, id, input.actor);
+  }
+
+  @Post('commerce/quotes/:id/import/claim')
+  claimCommerceImport(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ActorDto,
+  ) {
+    return this.social.claimCommerceImport(device, id, input.actor);
+  }
+
+  @Post('commerce/quotes/:id/import/complete')
+  completeCommerceImport(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ImportCompleteDto,
+  ) {
+    return this.social.completeCommerceImport(device, id, input);
+  }
+
+  @Post('commerce/quotes/:id/import/fail')
+  failCommerceImport(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() input: ImportFailDto,
+  ) {
+    return this.social.failCommerceImport(
+      device,
+      id,
+      input.actor,
+      input.reason,
+    );
+  }
+
+  @Get('campaigns/suggestions')
+  campaignSuggestions(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Query() query: SocialListQueryDto,
+  ) {
+    if (!query.connectionId) {
+      throw new ForbiddenException('A Facebook Page connection is required.');
+    }
+    return this.social.campaignSuggestions(device, query.connectionId);
+  }
+
+  @Get('campaigns')
+  campaigns(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Query() query: SocialListQueryDto,
+  ) {
+    return this.social.campaigns(device, query.connectionId);
+  }
+
+  @Post('campaigns')
+  createCampaign(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Body() input: CreateCampaignDto,
+  ) {
+    return this.social.createCampaign(device, input);
+  }
+
+  @Post('campaigns/:id/pause')
+  pauseCampaign(
+    @CurrentDevice() device: AuthenticatedDevice,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.social.pauseCampaign(device, id);
   }
 }
 

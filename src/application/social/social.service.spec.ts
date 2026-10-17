@@ -1,7 +1,12 @@
 import { ConfigService } from '@nestjs/config';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { jest } from '@jest/globals';
 import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.js';
-import { SocialConversationStatus } from '../../generated/prisma/enums.js';
+import {
+  SocialConnectionStatus,
+  SocialConversationStatus,
+  SocialQuoteStatus,
+} from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { GeminiTextProvider } from '../../infrastructure/social/gemini-text.provider.js';
 import { MetaGraphClient } from '../../infrastructure/social/meta-graph.client.js';
@@ -183,5 +188,74 @@ describe('SocialService Messenger webhooks', () => {
           'https://platform-lookaside.fbsbx.com/customer.jpg',
       },
     });
+  });
+});
+
+describe('SocialService commerce safety', () => {
+  const device = {
+    id: '30000000-0000-4000-8000-000000000003',
+    clientId: 'client-1',
+    storeId: 'store-1',
+  } as AuthenticatedDevice;
+
+  it('allows only one till to claim a quote import', async () => {
+    const quote = {
+      id: 'quote-1',
+      connectionId: 'connection-1',
+      status: SocialQuoteStatus.READY_TO_IMPORT,
+      customerLink: { id: 'link-1', unlinkedAt: null },
+      lines: [],
+    };
+    const prisma = {
+      socialQuote: {
+        findFirst: jest.fn().mockResolvedValue(quote),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    } as unknown as PrismaService;
+    const service = new SocialService(
+      prisma,
+      {} as ConfigService,
+      {} as SocialTokenVault,
+      {} as MetaGraphClient,
+      {} as GeminiTextProvider,
+      {} as never,
+    );
+
+    await expect(
+      service.claimCommerceImport(device, quote.id, 'cashier'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects a campaign caption that changes a price fact', async () => {
+    const prisma = {
+      socialConnection: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '10000000-0000-4000-8000-000000000001',
+          clientId: 'client-1',
+          storeId: 'store-1',
+          status: SocialConnectionStatus.ACTIVE,
+        }),
+      },
+    } as unknown as PrismaService;
+    const service = new SocialService(
+      prisma,
+      {} as ConfigService,
+      {} as SocialTokenVault,
+      {} as MetaGraphClient,
+      {} as GeminiTextProvider,
+      {} as never,
+    );
+
+    await expect(
+      service.createCampaign(device, {
+        connectionId: '10000000-0000-4000-8000-000000000001',
+        name: 'Price campaign',
+        goal: 'Increase inquiries',
+        facts: { product_name: '11kg LPG', price: '₱1,900.00' },
+        variants: ['Ask us about our 11kg LPG.'],
+        selectedVariant: 0,
+        actor: 'manager',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

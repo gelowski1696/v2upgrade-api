@@ -9,9 +9,10 @@ import {
   MetaCallbackController,
 } from '../presentation/http/social/social.controller.js';
 import { DeviceSyncModule } from './device-sync.module.js';
+import { StoreDatabaseModule } from './store-database.module.js';
 
 @Module({
-  imports: [DeviceSyncModule],
+  imports: [DeviceSyncModule, StoreDatabaseModule],
   controllers: [DeviceSocialController, MetaCallbackController],
   providers: [
     SocialService,

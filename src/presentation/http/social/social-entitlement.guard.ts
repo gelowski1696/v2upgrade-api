@@ -31,6 +31,11 @@ export class SocialEntitlementGuard implements CanActivate {
   }
 
   private featureForPath(path: string): string {
+    if (path.includes('/customer-link')) return 'socialCustomerLinking';
+    if (path.includes('/commerce')) {
+      return 'socialCommerce';
+    }
+    if (path.includes('/campaigns')) return 'socialCampaigns';
     if (path.includes('/posts/generate') || path.includes('/suggest-reply')) {
       return 'aiAssistance';
     }

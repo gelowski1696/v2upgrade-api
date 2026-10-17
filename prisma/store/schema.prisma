@@ -15,26 +15,26 @@ model SchemaMigration {
 }
 
 model Sale {
-  id            Int     @id @map("salesid")
-  reference     String? @map("salesrefnum")
-  customer      String? @map("salescust")
-  payment       String? @map("salespaym")
-  cashier       String? @map("salescashier")
-  itemCount     Int?    @map("salestotalitem")
-  subtotal      Float?  @map("salessub")
-  totalAmount   Float?  @map("salestotalamount")
-  creditPaid    Float?  @map("salescreditpaid")
-  creditBalance String? @map("salescreditbal")
-  status        String? @map("salestatus")
-  discount      Float?  @map("salesdisc")
-  category      String? @map("salescat")
-  customerId    Int?    @map("salescustid")
-  paymentType   String? @map("salespaytype")
-  totalCost     Float?  @map("salestotalcost")
-  specialDiscount Float? @map("specialdisc")
-  tender        Float?  @map("salestender")
-  change        Float?  @map("saleschange")
-  saleDate      String? @map("salesdate")
+  id              Int     @id @map("salesid")
+  reference       String? @map("salesrefnum")
+  customer        String? @map("salescust")
+  payment         String? @map("salespaym")
+  cashier         String? @map("salescashier")
+  itemCount       Int?    @map("salestotalitem")
+  subtotal        Float?  @map("salessub")
+  totalAmount     Float?  @map("salestotalamount")
+  creditPaid      Float?  @map("salescreditpaid")
+  creditBalance   String? @map("salescreditbal")
+  status          String? @map("salestatus")
+  discount        Float?  @map("salesdisc")
+  category        String? @map("salescat")
+  customerId      Int?    @map("salescustid")
+  paymentType     String? @map("salespaytype")
+  totalCost       Float?  @map("salestotalcost")
+  specialDiscount Float?  @map("specialdisc")
+  tender          Float?  @map("salestender")
+  change          Float?  @map("saleschange")
+  saleDate        String? @map("salesdate")
 
   @@index([saleDate])
   @@index([status])
@@ -71,32 +71,42 @@ model SaleItem {
 }
 
 model InventoryItem {
-  id          Int     @id @map("itemid")
-  code        String? @map("itemcode")
-  brand       String? @map("itembrand")
-  name        String? @map("itemname")
-  size        String? @map("itemsize")
-  quantity    Int?    @map("itemqty")
-  cost        Float?  @map("itemcost")
-  sellingPrice Float? @map("itemsellprice")
-  category    String? @map("itemcategory")
-  alertLevel  Int?    @map("alertnum")
-  fillQuantity Int?   @map("fillqty")
-  emptyQuantity Int?  @map("emptyqty")
-  warehouseFill Int?  @map("whfill")
-  warehouseEmpty Int? @map("whempty")
-  lentQuantity Int?   @map("lendqty")
+  id             Int        @id @map("itemid")
+  code           String?    @map("itemcode")
+  brand          String?    @map("itembrand")
+  name           String?    @map("itemname")
+  size           String?    @map("itemsize")
+  quantity       Int?       @map("itemqty")
+  cost           Float?     @map("itemcost")
+  sellingPrice   Float?     @map("itemsellprice")
+  category       String?    @map("itemcategory")
+  alertLevel     Int?       @map("alertnum")
+  fillQuantity   Int?       @map("fillqty")
+  emptyQuantity  Int?       @map("emptyqty")
+  warehouseFill  Int?       @map("whfill")
+  warehouseEmpty Int?       @map("whempty")
+  lentQuantity   Int?       @map("lendqty")
+  prices         PriceList?
 
   @@index([code])
   @@map("inventorytbl")
 }
 
+model PriceList {
+  itemId    Int           @id @map("itemid")
+  refill    Float?        @map("Refill")
+  nonRefill Float?        @map("Non_Refill")
+  item      InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@map("pricelisttbl")
+}
+
 model Customer {
-  id        Int     @id @map("custid")
-  name      String? @map("custname")
-  contact   String? @map("custcontnum")
-  balance   Float?  @map("custbalance")
-  status    String? @map("custstatus")
+  id      Int     @id @map("custid")
+  name    String? @map("custname")
+  contact String? @map("custcontnum")
+  balance Float?  @map("custbalance")
+  status  String? @map("custstatus")
 
   @@index([status])
   @@map("custinfo")
@@ -123,15 +133,15 @@ model Transfer {
 }
 
 model SupplierRestockPayment {
-  id               Int     @id @map("payment_id")
-  transferId       Int     @map("transfer_id")
+  id               Int    @id @map("payment_id")
+  transferId       Int    @map("transfer_id")
   amount           Float
-  paymentMethod    String  @map("payment_method")
-  paymentReference String  @map("payment_reference")
+  paymentMethod    String @map("payment_method")
+  paymentReference String @map("payment_reference")
   notes            String
-  paidAt           String  @map("paid_at")
-  recordedBy       String  @map("recorded_by")
-  paymentKind      String  @map("payment_kind")
+  paidAt           String @map("paid_at")
+  recordedBy       String @map("recorded_by")
+  paymentKind      String @map("payment_kind")
 
   @@index([transferId])
   @@map("supplier_restock_payments")

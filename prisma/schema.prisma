@@ -226,6 +226,31 @@ enum SocialAutomationMode {
   ASSISTED
 }
 
+enum SocialQuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  READY_TO_IMPORT
+  IMPORTING
+  IMPORTED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+  IMPORT_FAILED
+}
+
+enum SocialCampaignStatus {
+  SUGGESTED
+  DRAFT
+  AWAITING_APPROVAL
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
 model User {
   id                   String                     @id @default(uuid()) @db.Uuid
   username             String                     @unique @db.VarChar(80)
@@ -745,26 +770,26 @@ model Device {
 }
 
 model SocialConnection {
-  id                 String                  @id @default(uuid()) @db.Uuid
-  clientId           String                  @map("client_id") @db.Uuid
-  storeId            String                  @map("store_id") @db.Uuid
-  provider           String                  @default("META") @db.VarChar(20)
-  pageId             String                  @map("page_id") @db.VarChar(120)
-  pageName           String                  @map("page_name") @db.VarChar(180)
-  status             SocialConnectionStatus  @default(ACTIVE)
-  tokenCiphertext    String                  @map("token_ciphertext")
-  tokenExpiresAt     DateTime?               @map("token_expires_at") @db.Timestamptz(3)
-  grantedPermissions String[]                @default([]) @map("granted_permissions")
-  pageTasks          String[]                @default([]) @map("page_tasks")
-  lastCheckedAt      DateTime?               @map("last_checked_at") @db.Timestamptz(3)
-  lastError          String?                 @map("last_error")
-  connectedBy        String                  @map("connected_by") @db.VarChar(120)
-  connectedAt        DateTime                @default(now()) @map("connected_at") @db.Timestamptz(3)
-  disconnectedAt     DateTime?               @map("disconnected_at") @db.Timestamptz(3)
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
-  client             Client                  @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  store              Store                   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  id                 String                      @id @default(uuid()) @db.Uuid
+  clientId           String                      @map("client_id") @db.Uuid
+  storeId            String                      @map("store_id") @db.Uuid
+  provider           String                      @default("META") @db.VarChar(20)
+  pageId             String                      @map("page_id") @db.VarChar(120)
+  pageName           String                      @map("page_name") @db.VarChar(180)
+  status             SocialConnectionStatus      @default(ACTIVE)
+  tokenCiphertext    String                      @map("token_ciphertext")
+  tokenExpiresAt     DateTime?                   @map("token_expires_at") @db.Timestamptz(3)
+  grantedPermissions String[]                    @default([]) @map("granted_permissions")
+  pageTasks          String[]                    @default([]) @map("page_tasks")
+  lastCheckedAt      DateTime?                   @map("last_checked_at") @db.Timestamptz(3)
+  lastError          String?                     @map("last_error")
+  connectedBy        String                      @map("connected_by") @db.VarChar(120)
+  connectedAt        DateTime                    @default(now()) @map("connected_at") @db.Timestamptz(3)
+  disconnectedAt     DateTime?                   @map("disconnected_at") @db.Timestamptz(3)
+  createdAt          DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client             Client                      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  store              Store                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
   templates          SocialPostTemplate[]
   posts              SocialPost[]
   conversations      SocialConversation[]
@@ -772,6 +797,14 @@ model SocialConnection {
   webhookEvents      SocialWebhookEvent[]
   faqs               SocialFaq[]
   cashierPresence    SocialCashierPresence[]
+  customerLinks      SocialCustomerLink[]
+  quotes             SocialQuote[]
+  commerceEvents     SocialCommerceEvent[]
+  campaignRules      SocialCampaignRule[]
+  campaignSignals    SocialCampaignSignal[]
+  campaigns          SocialCampaign[]
+  campaignMetrics    SocialCampaignMetricDaily[]
+  attributions       SocialAttribution[]
 
   @@unique([storeId, pageId])
   @@index([clientId, storeId, status])
@@ -861,6 +894,9 @@ model SocialConversation {
   updatedAt             DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   connection            SocialConnection         @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   messages              SocialMessage[]
+  customerLink          SocialCustomerLink?
+  quotes                SocialQuote[]
+  attributions          SocialAttribution[]
 
   @@unique([connectionId, participantId])
   @@index([connectionId, status, lastMessageAt])
@@ -935,6 +971,231 @@ model SocialWebhookEvent {
 
   @@index([status, receivedAt])
   @@map("social_webhook_events")
+}
+
+model SocialCustomerLink {
+  id              String             @id @default(uuid()) @db.Uuid
+  connectionId    String             @map("connection_id") @db.Uuid
+  conversationId  String             @unique @map("conversation_id") @db.Uuid
+  posCustomerId   Int                @map("pos_customer_id")
+  customerName    String             @map("customer_name") @db.VarChar(180)
+  customerContact String?            @map("customer_contact") @db.VarChar(80)
+  verifiedMethod  String             @default("CASHIER_CONFIRMED") @map("verified_method") @db.VarChar(40)
+  linkedBy        String             @map("linked_by") @db.VarChar(120)
+  linkedAt        DateTime           @default(now()) @map("linked_at") @db.Timestamptz(3)
+  unlinkedAt      DateTime?          @map("unlinked_at") @db.Timestamptz(3)
+  connection      SocialConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  conversation    SocialConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  quotes          SocialQuote[]
+
+  @@index([connectionId, posCustomerId])
+  @@map("social_customer_links")
+}
+
+model SocialQuote {
+  id                  String                @id @default(uuid()) @db.Uuid
+  connectionId        String                @map("connection_id") @db.Uuid
+  conversationId      String                @map("conversation_id") @db.Uuid
+  customerLinkId      String?               @map("customer_link_id") @db.Uuid
+  sourceCampaignId    String?               @map("source_campaign_id") @db.Uuid
+  status              SocialQuoteStatus     @default(DRAFT)
+  currency            String                @default("PHP") @db.Char(3)
+  subtotalMinor       Int                   @default(0) @map("subtotal_minor")
+  adjustmentMinor     Int                   @default(0) @map("adjustment_minor")
+  totalMinor          Int                   @default(0) @map("total_minor")
+  notes               String                @default("")
+  sourceSnapshotId    String?               @map("source_snapshot_id") @db.Uuid
+  sourceSnapshotAt    DateTime?             @map("source_snapshot_at") @db.Timestamptz(3)
+  idempotencyKey      String                @unique @map("idempotency_key") @db.VarChar(120)
+  createdBy           String                @map("created_by") @db.VarChar(120)
+  approvedBy          String?               @map("approved_by") @db.VarChar(120)
+  expiresAt           DateTime?             @map("expires_at") @db.Timestamptz(3)
+  sentAt              DateTime?             @map("sent_at") @db.Timestamptz(3)
+  acceptedAt          DateTime?             @map("accepted_at") @db.Timestamptz(3)
+  importClaimedBy     String?               @map("import_claimed_by") @db.VarChar(120)
+  importClaimedAt     DateTime?             @map("import_claimed_at") @db.Timestamptz(3)
+  localQueueId        Int?                  @map("local_queue_id")
+  localQueueReference String?               @map("local_queue_reference") @db.VarChar(120)
+  importedAt          DateTime?             @map("imported_at") @db.Timestamptz(3)
+  completedAt         DateTime?             @map("completed_at") @db.Timestamptz(3)
+  lastError           String?               @map("last_error")
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection          SocialConnection      @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  conversation        SocialConversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  customerLink        SocialCustomerLink?   @relation(fields: [customerLinkId], references: [id], onDelete: SetNull)
+  sourceCampaign      SocialCampaign?       @relation(fields: [sourceCampaignId], references: [id], onDelete: SetNull)
+  lines               SocialQuoteLine[]
+  events              SocialCommerceEvent[]
+  attributions        SocialAttribution[]
+
+  @@index([connectionId, status, updatedAt])
+  @@index([conversationId, createdAt])
+  @@map("social_quotes")
+}
+
+model SocialQuoteLine {
+  id               String      @id @default(uuid()) @db.Uuid
+  quoteId          String      @map("quote_id") @db.Uuid
+  posItemId        Int         @map("pos_item_id")
+  itemCode         String      @map("item_code") @db.VarChar(120)
+  itemName         String      @map("item_name") @db.VarChar(240)
+  itemSize         String      @default("") @map("item_size") @db.VarChar(120)
+  unit             String      @default("NON-REFILL") @db.VarChar(30)
+  quantity         Int
+  unitPriceMinor   Int         @map("unit_price_minor")
+  lineTotalMinor   Int         @map("line_total_minor")
+  sourceSnapshotId String?     @map("source_snapshot_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  quote            SocialQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("social_quote_lines")
+}
+
+model SocialCommerceEvent {
+  id           String           @id @default(uuid()) @db.Uuid
+  connectionId String           @map("connection_id") @db.Uuid
+  quoteId      String?          @map("quote_id") @db.Uuid
+  eventType    String           @map("event_type") @db.VarChar(60)
+  actor        String           @db.VarChar(120)
+  deviceId     String?          @map("device_id") @db.Uuid
+  metadata     Json             @default("{}")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  connection   SocialConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  quote        SocialQuote?     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId, createdAt])
+  @@index([quoteId, createdAt])
+  @@map("social_commerce_events")
+}
+
+model SocialCampaignRule {
+  id           String                 @id @default(uuid()) @db.Uuid
+  connectionId String                 @map("connection_id") @db.Uuid
+  name         String                 @db.VarChar(160)
+  triggerType  String                 @map("trigger_type") @db.VarChar(60)
+  thresholds   Json                   @default("{}")
+  cooldownDays Int                    @default(14) @map("cooldown_days")
+  enabled      Boolean                @default(true)
+  autoSchedule Boolean                @default(false) @map("auto_schedule")
+  createdBy    String                 @map("created_by") @db.VarChar(120)
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection   SocialConnection       @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  signals      SocialCampaignSignal[]
+
+  @@unique([connectionId, name])
+  @@index([connectionId, enabled])
+  @@map("social_campaign_rules")
+}
+
+model SocialCampaignSignal {
+  id                String              @id @default(uuid()) @db.Uuid
+  connectionId      String              @map("connection_id") @db.Uuid
+  ruleId            String?             @map("rule_id") @db.Uuid
+  signalType        String              @map("signal_type") @db.VarChar(60)
+  sourceSnapshotId  String?             @map("source_snapshot_id") @db.Uuid
+  facts             Json                @default("{}")
+  eligible          Boolean             @default(true)
+  suppressionReason String?             @map("suppression_reason")
+  detectedAt        DateTime            @default(now()) @map("detected_at") @db.Timestamptz(3)
+  expiresAt         DateTime?           @map("expires_at") @db.Timestamptz(3)
+  connection        SocialConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  rule              SocialCampaignRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  campaigns         SocialCampaign[]
+
+  @@index([connectionId, eligible, detectedAt])
+  @@map("social_campaign_signals")
+}
+
+model SocialCampaign {
+  id           String                      @id @default(uuid()) @db.Uuid
+  connectionId String                      @map("connection_id") @db.Uuid
+  signalId     String?                     @map("signal_id") @db.Uuid
+  name         String                      @db.VarChar(180)
+  goal         String                      @db.VarChar(120)
+  status       SocialCampaignStatus        @default(DRAFT)
+  facts        Json                        @default("{}")
+  trackingCode String                      @unique @map("tracking_code") @db.VarChar(40)
+  createdBy    String                      @map("created_by") @db.VarChar(120)
+  approvedBy   String?                     @map("approved_by") @db.VarChar(120)
+  approvedAt   DateTime?                   @map("approved_at") @db.Timestamptz(3)
+  startsAt     DateTime?                   @map("starts_at") @db.Timestamptz(3)
+  endsAt       DateTime?                   @map("ends_at") @db.Timestamptz(3)
+  pausedAt     DateTime?                   @map("paused_at") @db.Timestamptz(3)
+  createdAt    DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection   SocialConnection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  signal       SocialCampaignSignal?       @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  variants     SocialCampaignVariant[]
+  quotes       SocialQuote[]
+  metrics      SocialCampaignMetricDaily[]
+  attributions SocialAttribution[]
+
+  @@index([connectionId, status, updatedAt])
+  @@map("social_campaigns")
+}
+
+model SocialCampaignVariant {
+  id                 String         @id @default(uuid()) @db.Uuid
+  campaignId         String         @map("campaign_id") @db.Uuid
+  content            String
+  factsHash          String         @map("facts_hash") @db.Char(64)
+  provider           String         @default("TEMPLATE") @db.VarChar(60)
+  model              String         @default("") @db.VarChar(120)
+  validationPassed   Boolean        @default(false) @map("validation_passed")
+  validationMessages String[]       @default([]) @map("validation_messages")
+  selected           Boolean        @default(false)
+  postId             String?        @map("post_id") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  campaign           SocialCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, selected])
+  @@map("social_campaign_variants")
+}
+
+model SocialCampaignMetricDaily {
+  id             String           @id @default(uuid()) @db.Uuid
+  connectionId   String           @map("connection_id") @db.Uuid
+  campaignId     String           @map("campaign_id") @db.Uuid
+  metricDate     DateTime         @map("metric_date") @db.Date
+  published      Int              @default(0)
+  clicks         Int              @default(0)
+  conversations  Int              @default(0)
+  quotesSent     Int              @default(0) @map("quotes_sent")
+  quotesAccepted Int              @default(0) @map("quotes_accepted")
+  ordersImported Int              @default(0) @map("orders_imported")
+  salesCompleted Int              @default(0) @map("sales_completed")
+  revenueMinor   Int              @default(0) @map("revenue_minor")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  connection     SocialConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  campaign       SocialCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, metricDate])
+  @@index([connectionId, metricDate])
+  @@map("social_campaign_metrics_daily")
+}
+
+model SocialAttribution {
+  id                  String              @id @default(uuid()) @db.Uuid
+  connectionId        String              @map("connection_id") @db.Uuid
+  campaignId          String              @map("campaign_id") @db.Uuid
+  conversationId      String?             @map("conversation_id") @db.Uuid
+  quoteId             String?             @map("quote_id") @db.Uuid
+  localOrderReference String?             @map("local_order_reference") @db.VarChar(120)
+  method              String              @db.VarChar(40)
+  revenueMinor        Int                 @default(0) @map("revenue_minor")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  connection          SocialConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  campaign            SocialCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  conversation        SocialConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  quote               SocialQuote?        @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, localOrderReference])
+  @@index([connectionId, createdAt])
+  @@map("social_attributions")
 }
 
 model StoreSnapshot {

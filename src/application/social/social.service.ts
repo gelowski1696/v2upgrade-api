@@ -18,14 +18,17 @@ import type { AuthenticatedDevice } from '../../domain/device/device-auth.types.
 import type { Prisma } from '../../generated/prisma/client.js';
 import {
   SocialAutomationMode,
+  SocialCampaignStatus,
   SocialConnectionStatus,
   SocialConversationStatus,
   SocialMessageDirection,
   SocialMessageSender,
   SocialOauthStatus,
   SocialPostStatus,
+  SocialQuoteStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { StorePrismaClientFactory } from '../../infrastructure/store-database/store-prisma-client.factory.js';
 import { GeminiTextProvider } from '../../infrastructure/social/gemini-text.provider.js';
 import {
   MetaGraphClient,
@@ -62,6 +65,7 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     private readonly vault: SocialTokenVault,
     private readonly meta: MetaGraphClient,
     private readonly ai: GeminiTextProvider,
+    private readonly stores: StorePrismaClientFactory,
   ) {}
 
   onModuleInit(): void {
@@ -790,6 +794,928 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async commerceCatalog(
+    device: AuthenticatedDevice,
+    connectionId: string,
+    query = '',
+  ) {
+    await this.connection(device, connectionId);
+    const term = query.trim().slice(0, 120);
+    const result = await this.stores.withClient(device.storeId, (store) =>
+      store.inventoryItem.findMany({
+        where: term
+          ? {
+              OR: [
+                { code: { contains: term } },
+                { name: { contains: term } },
+                { brand: { contains: term } },
+                { category: { contains: term } },
+                { size: { contains: term } },
+              ],
+            }
+          : undefined,
+        include: { prices: true },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        take: 40,
+      }),
+    );
+    const configuredMaxAge = Number(
+      this.config.get<string>('SOCIAL_COMMERCE_MAX_SNAPSHOT_AGE_MINUTES') ?? 15,
+    );
+    const maxAgeMinutes = Number.isFinite(configuredMaxAge)
+      ? Math.max(1, Math.min(24 * 60, configuredMaxAge))
+      : 15;
+    const ageMinutes = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - result.snapshot.snapshotCreatedAt.getTime()) / 60_000,
+      ),
+    );
+    return {
+      snapshot: {
+        ...result.snapshot,
+        ageMinutes,
+        stale: ageMinutes > maxAgeMinutes,
+        maxAgeMinutes,
+      },
+      items: result.data.map((item) => ({
+        id: item.id,
+        code: item.code?.trim() ?? '',
+        name: item.name?.trim() ?? 'Unnamed product',
+        brand: item.brand?.trim() ?? '',
+        size: item.size?.trim() ?? '',
+        category: item.category?.trim() ?? '',
+        fillQuantity: item.fillQuantity ?? item.quantity ?? 0,
+        alertLevel: item.alertLevel ?? 0,
+        refillPriceMinor: this.moneyMinor(
+          item.prices?.refill ?? item.sellingPrice ?? 0,
+        ),
+        nonRefillPriceMinor: this.moneyMinor(
+          item.prices?.nonRefill ?? item.sellingPrice ?? 0,
+        ),
+      })),
+    };
+  }
+
+  async commerceCustomers(
+    device: AuthenticatedDevice,
+    connectionId: string,
+    query = '',
+  ) {
+    await this.connection(device, connectionId);
+    const term = query.trim().slice(0, 120);
+    if (term.length < 2) return { customers: [], snapshot: null };
+    const result = await this.stores.withClient(device.storeId, (store) =>
+      store.customer.findMany({
+        where: {
+          OR: [{ name: { contains: term } }, { contact: { contains: term } }],
+        },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        take: 25,
+      }),
+    );
+    return {
+      snapshot: result.snapshot,
+      customers: result.data.map((customer) => ({
+        id: customer.id,
+        name: customer.name?.trim() ?? 'Unnamed customer',
+        contact: customer.contact?.trim() ?? '',
+        address: '',
+        email: '',
+      })),
+    };
+  }
+
+  async commerceContext(device: AuthenticatedDevice, conversationId: string) {
+    const conversation = await this.conversation(device, conversationId);
+    const [customerLink, quotes] = await Promise.all([
+      this.prisma.socialCustomerLink.findUnique({
+        where: { conversationId },
+      }),
+      this.prisma.socialQuote.findMany({
+        where: { conversationId },
+        include: { lines: { orderBy: { createdAt: 'asc' } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+    return {
+      connectionId: conversation.connectionId,
+      customerLink:
+        customerLink && !customerLink.unlinkedAt ? customerLink : null,
+      quotes,
+    };
+  }
+
+  async linkCommerceCustomer(
+    device: AuthenticatedDevice,
+    conversationId: string,
+    input: {
+      posCustomerId: number;
+      customerName: string;
+      customerContact?: string;
+      actor: string;
+    },
+  ) {
+    const conversation = await this.conversation(device, conversationId);
+    const found = await this.stores.withClient(device.storeId, (store) =>
+      store.customer.findUnique({ where: { id: input.posCustomerId } }),
+    );
+    if (!found.data) throw new NotFoundException('POS customer not found.');
+    const actor = this.actor(input.actor);
+    const link = await this.prisma.socialCustomerLink.upsert({
+      where: { conversationId },
+      create: {
+        connectionId: conversation.connectionId,
+        conversationId,
+        posCustomerId: found.data.id,
+        customerName: found.data.name?.trim() || input.customerName.trim(),
+        customerContact:
+          found.data.contact?.trim() || input.customerContact?.trim() || null,
+        linkedBy: actor,
+      },
+      update: {
+        posCustomerId: found.data.id,
+        customerName: found.data.name?.trim() || input.customerName.trim(),
+        customerContact:
+          found.data.contact?.trim() || input.customerContact?.trim() || null,
+        linkedBy: actor,
+        linkedAt: new Date(),
+        unlinkedAt: null,
+      },
+    });
+    await this.commerceEvent(
+      conversation.connectionId,
+      null,
+      'CUSTOMER_LINKED',
+      actor,
+      device.id,
+      { posCustomerId: link.posCustomerId },
+    );
+    return link;
+  }
+
+  async unlinkCommerceCustomer(
+    device: AuthenticatedDevice,
+    conversationId: string,
+    actorValue: string,
+  ) {
+    const conversation = await this.conversation(device, conversationId);
+    const existing = await this.prisma.socialCustomerLink.findUnique({
+      where: { conversationId },
+    });
+    if (!existing) return { unlinked: true };
+    const actor = this.actor(actorValue);
+    await this.prisma.socialCustomerLink.update({
+      where: { id: existing.id },
+      data: { unlinkedAt: new Date() },
+    });
+    await this.commerceEvent(
+      conversation.connectionId,
+      null,
+      'CUSTOMER_UNLINKED',
+      actor,
+      device.id,
+      { posCustomerId: existing.posCustomerId },
+    );
+    return { unlinked: true };
+  }
+
+  async saveCommerceQuote(
+    device: AuthenticatedDevice,
+    input: {
+      id?: string;
+      connectionId: string;
+      conversationId: string;
+      sourceCampaignId?: string;
+      lines: Array<{
+        posItemId: number;
+        itemCode: string;
+        itemName: string;
+        itemSize: string;
+        unit: 'REFILL' | 'NON-REFILL';
+        quantity: number;
+        unitPriceMinor: number;
+        sourceSnapshotId?: string;
+      }>;
+      notes: string;
+      expiresAt?: string;
+      idempotencyKey: string;
+      actor: string;
+    },
+  ) {
+    await this.connection(device, input.connectionId);
+    const conversation = await this.conversation(device, input.conversationId);
+    if (conversation.connectionId !== input.connectionId) {
+      throw new BadRequestException('Conversation and Page do not match.');
+    }
+    if (!input.lines.length) {
+      throw new BadRequestException('Add at least one quote item.');
+    }
+    const duplicate = await this.prisma.socialQuote.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: { lines: true },
+    });
+    if (duplicate) return duplicate;
+
+    const requestedIds = [
+      ...new Set(input.lines.map((line) => line.posItemId)),
+    ];
+    const catalog = await this.stores.withClient(device.storeId, (store) =>
+      store.inventoryItem.findMany({
+        where: { id: { in: requestedIds } },
+        include: { prices: true },
+      }),
+    );
+    const products = new Map(catalog.data.map((item) => [item.id, item]));
+    const lines = input.lines.map((line) => {
+      const product = products.get(line.posItemId);
+      if (!product) {
+        throw new BadRequestException(
+          `Product ${line.itemName || line.posItemId} is no longer available.`,
+        );
+      }
+      const price = this.moneyMinor(
+        line.unit === 'REFILL'
+          ? (product.prices?.refill ?? product.sellingPrice ?? 0)
+          : (product.prices?.nonRefill ?? product.sellingPrice ?? 0),
+      );
+      return {
+        posItemId: product.id,
+        itemCode: product.code?.trim() || line.itemCode.trim(),
+        itemName: product.name?.trim() || line.itemName.trim(),
+        itemSize: product.size?.trim() || line.itemSize.trim(),
+        unit: line.unit,
+        quantity: line.quantity,
+        unitPriceMinor: price,
+        lineTotalMinor: price * line.quantity,
+        sourceSnapshotId: catalog.snapshot.id,
+      };
+    });
+    const subtotalMinor = lines.reduce(
+      (sum, line) => sum + line.lineTotalMinor,
+      0,
+    );
+    if (!Number.isSafeInteger(subtotalMinor) || subtotalMinor > 100_000_000) {
+      throw new BadRequestException(
+        'Quote total is outside the allowed range.',
+      );
+    }
+    const customerLink = await this.prisma.socialCustomerLink.findFirst({
+      where: { conversationId: input.conversationId, unlinkedAt: null },
+    });
+    if (input.sourceCampaignId) {
+      const campaign = await this.prisma.socialCampaign.findFirst({
+        where: {
+          id: input.sourceCampaignId,
+          connectionId: input.connectionId,
+        },
+      });
+      if (!campaign) throw new NotFoundException('Campaign not found.');
+    }
+    const actor = this.actor(input.actor);
+    const expiresAt = input.expiresAt
+      ? new Date(input.expiresAt)
+      : new Date(Date.now() + 24 * 60 * 60_000);
+    const quote = await this.prisma.$transaction(async (transaction) => {
+      if (input.id) {
+        const existing = await transaction.socialQuote.findFirst({
+          where: {
+            id: input.id,
+            connectionId: input.connectionId,
+            conversationId: input.conversationId,
+          },
+        });
+        if (!existing) throw new NotFoundException('Quote not found.');
+        if (existing.status !== SocialQuoteStatus.DRAFT) {
+          throw new ConflictException('Only draft quotes can be edited.');
+        }
+        await transaction.socialQuoteLine.deleteMany({
+          where: { quoteId: existing.id },
+        });
+        return transaction.socialQuote.update({
+          where: { id: existing.id },
+          data: {
+            customerLinkId: customerLink?.id,
+            sourceCampaignId: input.sourceCampaignId,
+            subtotalMinor,
+            totalMinor: subtotalMinor,
+            notes: input.notes.trim(),
+            sourceSnapshotId: catalog.snapshot.id,
+            sourceSnapshotAt: catalog.snapshot.snapshotCreatedAt,
+            expiresAt,
+            lines: { create: lines },
+          },
+          include: { lines: true },
+        });
+      }
+      return transaction.socialQuote.create({
+        data: {
+          connectionId: input.connectionId,
+          conversationId: input.conversationId,
+          customerLinkId: customerLink?.id,
+          sourceCampaignId: input.sourceCampaignId,
+          subtotalMinor,
+          totalMinor: subtotalMinor,
+          notes: input.notes.trim(),
+          sourceSnapshotId: catalog.snapshot.id,
+          sourceSnapshotAt: catalog.snapshot.snapshotCreatedAt,
+          idempotencyKey: input.idempotencyKey,
+          createdBy: actor,
+          expiresAt,
+          lines: { create: lines },
+        },
+        include: { lines: true },
+      });
+    });
+    await this.commerceEvent(
+      input.connectionId,
+      quote.id,
+      input.id ? 'QUOTE_UPDATED' : 'QUOTE_CREATED',
+      actor,
+      device.id,
+      { subtotalMinor, lineCount: lines.length },
+    );
+    return quote;
+  }
+
+  async sendCommerceQuote(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    actorValue: string,
+  ) {
+    const quote = await this.quote(device, quoteId);
+    if (quote.status !== SocialQuoteStatus.DRAFT) {
+      if (
+        (
+          [
+            SocialQuoteStatus.SENT,
+            SocialQuoteStatus.READY_TO_IMPORT,
+            SocialQuoteStatus.IMPORTING,
+            SocialQuoteStatus.IMPORTED,
+            SocialQuoteStatus.COMPLETED,
+          ] as SocialQuoteStatus[]
+        ).includes(quote.status)
+      ) {
+        return quote;
+      }
+      throw new ConflictException('Only draft quotes can be sent.');
+    }
+    if (!quote.lines.length) throw new ConflictException('Quote has no items.');
+    const actor = this.actor(actorValue);
+    const message = this.quoteMessage(quote);
+    await this.reply(device, quote.conversationId, message, actor);
+    const updated = await this.prisma.socialQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: SocialQuoteStatus.SENT,
+        sentAt: new Date(),
+        approvedBy: actor,
+      },
+      include: { lines: true, customerLink: true },
+    });
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'QUOTE_SENT',
+      actor,
+      device.id,
+      { totalMinor: quote.totalMinor },
+    );
+    return updated;
+  }
+
+  async acceptCommerceQuote(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    actorValue: string,
+  ) {
+    const quote = await this.quote(device, quoteId);
+    if (quote.status !== SocialQuoteStatus.SENT) {
+      if (
+        (
+          [
+            SocialQuoteStatus.READY_TO_IMPORT,
+            SocialQuoteStatus.IMPORTING,
+            SocialQuoteStatus.IMPORTED,
+            SocialQuoteStatus.COMPLETED,
+          ] as SocialQuoteStatus[]
+        ).includes(quote.status)
+      ) {
+        return quote;
+      }
+      throw new ConflictException('Only a sent quote can be accepted.');
+    }
+    if (quote.expiresAt && quote.expiresAt <= new Date()) {
+      await this.prisma.socialQuote.update({
+        where: { id: quote.id },
+        data: { status: SocialQuoteStatus.EXPIRED },
+      });
+      throw new ConflictException('This quote has expired.');
+    }
+    if (!quote.customerLinkId) {
+      throw new ConflictException(
+        'Link the verified POS customer before accepting this quote.',
+      );
+    }
+    const actor = this.actor(actorValue);
+    const updated = await this.prisma.socialQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: SocialQuoteStatus.READY_TO_IMPORT,
+        acceptedAt: new Date(),
+      },
+      include: { lines: true, customerLink: true },
+    });
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'QUOTE_ACCEPTED',
+      actor,
+      device.id,
+    );
+    return updated;
+  }
+
+  async cancelCommerceQuote(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    actorValue: string,
+  ) {
+    const quote = await this.quote(device, quoteId);
+    if (quote.status === SocialQuoteStatus.CANCELLED) return quote;
+    if (
+      (
+        [
+          SocialQuoteStatus.IMPORTED,
+          SocialQuoteStatus.COMPLETED,
+        ] as SocialQuoteStatus[]
+      ).includes(quote.status)
+    ) {
+      throw new ConflictException(
+        'An imported quote cannot be cancelled here.',
+      );
+    }
+    const actor = this.actor(actorValue);
+    const updated = await this.prisma.socialQuote.update({
+      where: { id: quote.id },
+      data: { status: SocialQuoteStatus.CANCELLED },
+      include: { lines: true, customerLink: true },
+    });
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'QUOTE_CANCELLED',
+      actor,
+      device.id,
+    );
+    return updated;
+  }
+
+  async claimCommerceImport(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    actorValue: string,
+  ) {
+    const quote = await this.quote(device, quoteId);
+    const actor = this.actor(actorValue);
+    if (
+      quote.status === SocialQuoteStatus.IMPORTING &&
+      quote.importClaimedBy === actor
+    ) {
+      return quote;
+    }
+    if (
+      !(
+        [
+          SocialQuoteStatus.READY_TO_IMPORT,
+          SocialQuoteStatus.IMPORT_FAILED,
+        ] as SocialQuoteStatus[]
+      ).includes(quote.status)
+    ) {
+      throw new ConflictException('This quote is not ready for POS import.');
+    }
+    if (!quote.customerLink || quote.customerLink.unlinkedAt) {
+      throw new ConflictException('The linked POS customer is unavailable.');
+    }
+    const claimed = await this.prisma.socialQuote.updateMany({
+      where: {
+        id: quote.id,
+        status: {
+          in: [
+            SocialQuoteStatus.READY_TO_IMPORT,
+            SocialQuoteStatus.IMPORT_FAILED,
+          ],
+        },
+      },
+      data: {
+        status: SocialQuoteStatus.IMPORTING,
+        importClaimedBy: actor,
+        importClaimedAt: new Date(),
+        lastError: null,
+      },
+    });
+    if (!claimed.count) {
+      throw new ConflictException('Another till already claimed this quote.');
+    }
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'IMPORT_CLAIMED',
+      actor,
+      device.id,
+    );
+    return this.quote(device, quote.id);
+  }
+
+  async completeCommerceImport(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    input: {
+      actor: string;
+      localQueueId: number;
+      localQueueReference: string;
+    },
+  ) {
+    const quote = await this.quote(device, quoteId);
+    const actor = this.actor(input.actor);
+    if (quote.status === SocialQuoteStatus.IMPORTED) return quote;
+    if (
+      quote.status !== SocialQuoteStatus.IMPORTING ||
+      quote.importClaimedBy !== actor
+    ) {
+      throw new ConflictException('This till does not own the quote import.');
+    }
+    const updated = await this.prisma.socialQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: SocialQuoteStatus.IMPORTED,
+        localQueueId: input.localQueueId,
+        localQueueReference: input.localQueueReference.trim(),
+        importedAt: new Date(),
+      },
+      include: { lines: true, customerLink: true },
+    });
+    if (quote.sourceCampaignId) {
+      await this.prisma.socialAttribution.upsert({
+        where: {
+          campaignId_localOrderReference: {
+            campaignId: quote.sourceCampaignId,
+            localOrderReference: input.localQueueReference.trim(),
+          },
+        },
+        create: {
+          connectionId: quote.connectionId,
+          campaignId: quote.sourceCampaignId,
+          conversationId: quote.conversationId,
+          quoteId: quote.id,
+          localOrderReference: input.localQueueReference.trim(),
+          method: 'QUOTE_IMPORT',
+          revenueMinor: quote.totalMinor,
+        },
+        update: { revenueMinor: quote.totalMinor },
+      });
+    }
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'IMPORT_COMPLETED',
+      actor,
+      device.id,
+      {
+        localQueueId: input.localQueueId,
+        localQueueReference: input.localQueueReference.trim(),
+      },
+    );
+    return updated;
+  }
+
+  async failCommerceImport(
+    device: AuthenticatedDevice,
+    quoteId: string,
+    actorValue: string,
+    reason: string,
+  ) {
+    const quote = await this.quote(device, quoteId);
+    const actor = this.actor(actorValue);
+    if (
+      quote.status === SocialQuoteStatus.IMPORT_FAILED &&
+      quote.importClaimedBy === actor
+    ) {
+      return quote;
+    }
+    if (
+      quote.status !== SocialQuoteStatus.IMPORTING ||
+      quote.importClaimedBy !== actor
+    ) {
+      throw new ConflictException('This till does not own the quote import.');
+    }
+    const updated = await this.prisma.socialQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: SocialQuoteStatus.IMPORT_FAILED,
+        lastError: reason.trim().slice(0, 1000),
+      },
+      include: { lines: true, customerLink: true },
+    });
+    await this.commerceEvent(
+      quote.connectionId,
+      quote.id,
+      'IMPORT_FAILED',
+      actor,
+      device.id,
+      { reason: reason.trim().slice(0, 300) },
+    );
+    return updated;
+  }
+
+  async campaignSuggestions(device: AuthenticatedDevice, connectionId: string) {
+    await this.connection(device, connectionId);
+    const result = await this.stores.withClient(device.storeId, (store) =>
+      store.inventoryItem.findMany({
+        where: { fillQuantity: { gt: 0 } },
+        include: { prices: true },
+        orderBy: [{ fillQuantity: 'desc' }, { name: 'asc' }],
+        take: 12,
+      }),
+    );
+    const snapshotAgeMinutes = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - result.snapshot.snapshotCreatedAt.getTime()) / 60_000,
+      ),
+    );
+    const configuredMaxAge = Number(
+      this.config.get<string>('SOCIAL_COMMERCE_MAX_SNAPSHOT_AGE_MINUTES') ?? 15,
+    );
+    const maxAgeMinutes = Number.isFinite(configuredMaxAge)
+      ? Math.max(1, Math.min(24 * 60, configuredMaxAge))
+      : 15;
+    return {
+      snapshot: { ...result.snapshot, ageMinutes: snapshotAgeMinutes },
+      suggestions: result.data
+        .filter(
+          (item) =>
+            (item.fillQuantity ?? 0) > Math.max(item.alertLevel ?? 0, 0) &&
+            Math.max(
+              item.prices?.refill ?? item.sellingPrice ?? 0,
+              item.prices?.nonRefill ?? item.sellingPrice ?? 0,
+            ) > 0,
+        )
+        .slice(0, 8)
+        .map((item) => ({
+          key: `healthy-stock:${result.snapshot.id}:${item.id}`,
+          signalType: 'HEALTHY_STOCK',
+          title: `Feature ${item.name?.trim() || item.code?.trim() || 'product'}`,
+          reason: `${item.fillQuantity ?? 0} fill item(s) available above the safety level.`,
+          eligible: snapshotAgeMinutes <= maxAgeMinutes,
+          facts: {
+            product_name: item.name?.trim() || 'Product',
+            product_code: item.code?.trim() || '',
+            product_size: item.size?.trim() || '',
+            price: this.moneyLabel(
+              this.moneyMinor(item.prices?.refill ?? item.sellingPrice ?? 0),
+            ),
+            call_to_action: 'Message us for availability and delivery details.',
+          },
+        })),
+    };
+  }
+
+  async campaigns(device: AuthenticatedDevice, connectionId?: string) {
+    if (connectionId) await this.connection(device, connectionId);
+    const campaigns = await this.prisma.socialCampaign.findMany({
+      where: {
+        connection: { clientId: device.clientId, storeId: device.storeId },
+        ...(connectionId ? { connectionId } : {}),
+      },
+      include: {
+        variants: { orderBy: { createdAt: 'asc' } },
+        quotes: { select: { status: true, totalMinor: true } },
+        attributions: { select: { revenueMinor: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
+    });
+    const postIds = campaigns.flatMap((campaign) =>
+      campaign.variants.flatMap((variant) =>
+        variant.postId ? [variant.postId] : [],
+      ),
+    );
+    const posts = postIds.length
+      ? await this.prisma.socialPost.findMany({
+          where: { id: { in: postIds } },
+          select: { id: true, status: true, publishedAt: true },
+        })
+      : [];
+    const postMap = new Map(posts.map((post) => [post.id, post]));
+    return campaigns.map((campaign) => {
+      const campaignPosts = campaign.variants
+        .flatMap((variant) =>
+          variant.postId ? [postMap.get(variant.postId)] : [],
+        )
+        .filter((post): post is NonNullable<typeof post> => Boolean(post));
+      const status =
+        campaign.status === SocialCampaignStatus.PAUSED
+          ? campaign.status
+          : campaignPosts.some(
+                (post) => post.status === SocialPostStatus.PUBLISHED,
+              )
+            ? SocialCampaignStatus.ACTIVE
+            : campaignPosts.some(
+                  (post) => post.status === SocialPostStatus.SCHEDULED,
+                )
+              ? SocialCampaignStatus.SCHEDULED
+              : campaignPosts.some(
+                    (post) => post.status === SocialPostStatus.FAILED,
+                  )
+                ? SocialCampaignStatus.FAILED
+                : campaignPosts.some(
+                      (post) => post.status === SocialPostStatus.CANCELLED,
+                    )
+                  ? SocialCampaignStatus.CANCELLED
+                  : campaign.status;
+      return {
+        ...campaign,
+        status,
+        variants: campaign.variants.map((variant) => ({
+          ...variant,
+          post: variant.postId ? (postMap.get(variant.postId) ?? null) : null,
+        })),
+        metrics: {
+          published: campaign.variants.some(
+            (variant) =>
+              variant.postId &&
+              postMap.get(variant.postId)?.status ===
+                SocialPostStatus.PUBLISHED,
+          )
+            ? 1
+            : 0,
+          quotesSent: campaign.quotes.filter((quote) =>
+            (
+              [
+                SocialQuoteStatus.SENT,
+                SocialQuoteStatus.READY_TO_IMPORT,
+                SocialQuoteStatus.IMPORTING,
+                SocialQuoteStatus.IMPORTED,
+                SocialQuoteStatus.COMPLETED,
+              ] as SocialQuoteStatus[]
+            ).includes(quote.status),
+          ).length,
+          quotesAccepted: campaign.quotes.filter((quote) =>
+            (
+              [
+                SocialQuoteStatus.READY_TO_IMPORT,
+                SocialQuoteStatus.IMPORTING,
+                SocialQuoteStatus.IMPORTED,
+                SocialQuoteStatus.COMPLETED,
+              ] as SocialQuoteStatus[]
+            ).includes(quote.status),
+          ).length,
+          ordersImported: campaign.quotes.filter((quote) =>
+            (
+              [
+                SocialQuoteStatus.IMPORTED,
+                SocialQuoteStatus.COMPLETED,
+              ] as SocialQuoteStatus[]
+            ).includes(quote.status),
+          ).length,
+          revenueMinor: campaign.attributions.reduce(
+            (sum, attribution) => sum + attribution.revenueMinor,
+            0,
+          ),
+        },
+      };
+    });
+  }
+
+  async createCampaign(
+    device: AuthenticatedDevice,
+    input: {
+      connectionId: string;
+      signalId?: string;
+      name: string;
+      goal: string;
+      facts: Record<string, string>;
+      variants: string[];
+      selectedVariant: number;
+      scheduledAt?: string;
+      actor: string;
+    },
+  ) {
+    await this.connection(device, input.connectionId, true);
+    const variants = input.variants
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const selected = variants[input.selectedVariant];
+    if (!selected) throw new BadRequestException('Select a caption variant.');
+    const facts = Object.fromEntries(
+      Object.entries(input.facts)
+        .filter(
+          ([key, value]) =>
+            /^[a-z][a-z0-9_]{0,39}$/i.test(key) && typeof value === 'string',
+        )
+        .map(([key, value]) => [key, value.trim().slice(0, 500)]),
+    );
+    const validationMessages = this.validateCampaignFacts(selected, facts);
+    if (validationMessages.length) {
+      throw new BadRequestException(validationMessages.join(' '));
+    }
+    const actor = this.actor(input.actor);
+    const factsHash = this.hash(JSON.stringify(facts));
+    const trackingCode = `SOC-${randomBytes(5).toString('hex').toUpperCase()}`;
+    const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : null;
+    return this.prisma.$transaction(async (transaction) => {
+      const campaign = await transaction.socialCampaign.create({
+        data: {
+          connectionId: input.connectionId,
+          signalId: input.signalId,
+          name: input.name.trim(),
+          goal: input.goal.trim(),
+          status: SocialCampaignStatus.AWAITING_APPROVAL,
+          facts: facts as Prisma.InputJsonValue,
+          trackingCode,
+          createdBy: actor,
+          startsAt: scheduledAt,
+        },
+      });
+      const post = await transaction.socialPost.create({
+        data: {
+          connectionId: input.connectionId,
+          content: `${selected}\n\nReference: ${trackingCode}`,
+          status: SocialPostStatus.AWAITING_APPROVAL,
+          scheduledAt,
+          idempotencyKey: `campaign:${campaign.id}`,
+          createdBy: actor,
+          generationMetadata: {
+            campaignId: campaign.id,
+            factsHash,
+            trackingCode,
+          },
+        },
+      });
+      await transaction.socialCampaignVariant.createMany({
+        data: variants.map((content, index) => ({
+          campaignId: campaign.id,
+          content,
+          factsHash,
+          provider: 'GEMINI_OR_FALLBACK',
+          validationPassed: !this.validateCampaignFacts(content, facts).length,
+          validationMessages: this.validateCampaignFacts(content, facts),
+          selected: index === input.selectedVariant,
+          postId: index === input.selectedVariant ? post.id : null,
+        })),
+      });
+      return transaction.socialCampaign.findUniqueOrThrow({
+        where: { id: campaign.id },
+        include: { variants: true },
+      });
+    });
+  }
+
+  async pauseCampaign(device: AuthenticatedDevice, id: string) {
+    const campaign = await this.campaign(device, id);
+    if (
+      (
+        [
+          SocialCampaignStatus.COMPLETED,
+          SocialCampaignStatus.CANCELLED,
+        ] as SocialCampaignStatus[]
+      ).includes(campaign.status)
+    ) {
+      throw new ConflictException('This campaign can no longer be paused.');
+    }
+    const variants = await this.prisma.socialCampaignVariant.findMany({
+      where: { campaignId: campaign.id, postId: { not: null } },
+      select: { postId: true },
+    });
+    const postIds = variants.flatMap((variant) =>
+      variant.postId ? [variant.postId] : [],
+    );
+    return this.prisma.$transaction(async (transaction) => {
+      if (postIds.length) {
+        await transaction.socialPost.updateMany({
+          where: {
+            id: { in: postIds },
+            status: {
+              in: [
+                SocialPostStatus.AWAITING_APPROVAL,
+                SocialPostStatus.SCHEDULED,
+                SocialPostStatus.FAILED,
+              ],
+            },
+          },
+          data: { status: SocialPostStatus.CANCELLED },
+        });
+      }
+      return transaction.socialCampaign.update({
+        where: { id: campaign.id },
+        data: { status: SocialCampaignStatus.PAUSED, pausedAt: new Date() },
+        include: { variants: true },
+      });
+    });
+  }
+
   verifyWebhookSignature(
     rawBody: Buffer | undefined,
     signature: string | undefined,
@@ -1268,6 +2194,113 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     });
     if (!conversation) throw new NotFoundException('Conversation not found.');
     return conversation;
+  }
+
+  private async quote(device: AuthenticatedDevice, id: string) {
+    const quote = await this.prisma.socialQuote.findFirst({
+      where: {
+        id,
+        connection: { clientId: device.clientId, storeId: device.storeId },
+      },
+      include: {
+        lines: { orderBy: { createdAt: 'asc' } },
+        customerLink: true,
+      },
+    });
+    if (!quote) throw new NotFoundException('Quote not found.');
+    return quote;
+  }
+
+  private async campaign(device: AuthenticatedDevice, id: string) {
+    const campaign = await this.prisma.socialCampaign.findFirst({
+      where: {
+        id,
+        connection: { clientId: device.clientId, storeId: device.storeId },
+      },
+    });
+    if (!campaign) throw new NotFoundException('Campaign not found.');
+    return campaign;
+  }
+
+  private commerceEvent(
+    connectionId: string,
+    quoteId: string | null,
+    eventType: string,
+    actor: string,
+    deviceId?: string,
+    metadata: Record<string, unknown> = {},
+  ) {
+    return this.prisma.socialCommerceEvent.create({
+      data: {
+        connectionId,
+        quoteId,
+        eventType,
+        actor,
+        deviceId,
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  private moneyMinor(value: number): number {
+    if (!Number.isFinite(value) || value < 0) return 0;
+    return Math.round(value * 100);
+  }
+
+  private moneyLabel(valueMinor: number): string {
+    return `PHP ${(valueMinor / 100).toLocaleString('en-PH', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  private quoteMessage(quote: {
+    lines: Array<{
+      itemName: string;
+      itemSize: string;
+      unit: string;
+      quantity: number;
+      lineTotalMinor: number;
+    }>;
+    totalMinor: number;
+    notes: string;
+    expiresAt: Date | null;
+  }): string {
+    const lines = quote.lines.map(
+      (line) =>
+        `${line.quantity} × ${line.itemName}${line.itemSize ? ` ${line.itemSize}` : ''} (${line.unit === 'REFILL' ? 'Refill' : 'Non-refill'}) — ${this.moneyLabel(line.lineTotalMinor)}`,
+    );
+    return [
+      'Here is your requested quotation:',
+      '',
+      ...lines,
+      '',
+      `Total: ${this.moneyLabel(quote.totalMinor)}`,
+      quote.notes ? `Notes: ${quote.notes}` : '',
+      quote.expiresAt
+        ? `Valid until: ${quote.expiresAt.toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`
+        : '',
+      '',
+      'Stock and final pricing will be confirmed by the cashier before checkout.',
+    ]
+      .filter((line) => line !== '')
+      .join('\n');
+  }
+
+  private validateCampaignFacts(
+    content: string,
+    facts: Record<string, string>,
+  ): string[] {
+    const messages: string[] = [];
+    for (const [key, value] of Object.entries(facts)) {
+      if (!value || !/(price|date|phone|contact|promo|discount)/i.test(key)) {
+        continue;
+      }
+      if (!content.toLocaleLowerCase().includes(value.toLocaleLowerCase())) {
+        messages.push(`The selected caption must preserve ${key} exactly.`);
+      }
+    }
+    return messages;
   }
 
   private publicConnection(connection: {
