@@ -864,18 +864,43 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
   ) {
     await this.connection(device, connectionId);
     const term = query.trim().slice(0, 120);
-    if (term.length < 2) return { customers: [], snapshot: null };
+    if (!term) return { customers: [], snapshot: null };
     const result = await this.stores.withClient(device.storeId, (store) =>
       store.customer.findMany({
         where: {
-          OR: [{ name: { contains: term } }, { contact: { contains: term } }],
+          AND: [
+            {
+              OR: [
+                { name: { contains: term } },
+                { contact: { contains: term } },
+              ],
+            },
+            { OR: [{ status: null }, { status: { not: 'inactive' } }] },
+          ],
         },
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
         take: 25,
       }),
     );
+    const configuredMaxAge = Number(
+      this.config.get<string>('SOCIAL_COMMERCE_MAX_SNAPSHOT_AGE_MINUTES') ?? 15,
+    );
+    const maxAgeMinutes = Number.isFinite(configuredMaxAge)
+      ? Math.max(1, Math.min(24 * 60, configuredMaxAge))
+      : 15;
+    const ageMinutes = Math.max(
+      0,
+      Math.floor(
+        (Date.now() - result.snapshot.snapshotCreatedAt.getTime()) / 60_000,
+      ),
+    );
     return {
-      snapshot: result.snapshot,
+      snapshot: {
+        ...result.snapshot,
+        ageMinutes,
+        stale: ageMinutes > maxAgeMinutes,
+        maxAgeMinutes,
+      },
       customers: result.data.map((customer) => ({
         id: customer.id,
         name: customer.name?.trim() ?? 'Unnamed customer',

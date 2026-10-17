@@ -226,6 +226,68 @@ describe('SocialService commerce safety', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it('searches active POS customers from the first typed character', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 7, name: 'Carlos Santos', contact: '09171234567' },
+    ]);
+    const prisma = {
+      socialConnection: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '10000000-0000-4000-8000-000000000001',
+          clientId: 'client-1',
+          storeId: 'store-1',
+          status: SocialConnectionStatus.ACTIVE,
+        }),
+      },
+    } as unknown as PrismaService;
+    const stores = {
+      withClient: jest.fn(async (_storeId: string, operation: (store: unknown) => Promise<unknown>) => ({
+        snapshot: {
+          id: 'snapshot-1',
+          schemaVersion: 27,
+          snapshotCreatedAt: new Date(),
+          syncedAt: new Date(),
+        },
+        data: await operation({ customer: { findMany } }),
+      })),
+    };
+    const service = new SocialService(
+      prisma,
+      { get: jest.fn().mockReturnValue('15') } as unknown as ConfigService,
+      {} as SocialTokenVault,
+      {} as MetaGraphClient,
+      {} as GeminiTextProvider,
+      stores as never,
+    );
+
+    const result = await service.commerceCustomers(
+      device,
+      '10000000-0000-4000-8000-000000000001',
+      ' C ',
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 25,
+        where: {
+          AND: [
+            {
+              OR: [
+                { name: { contains: 'C' } },
+                { contact: { contains: 'C' } },
+              ],
+            },
+            { OR: [{ status: null }, { status: { not: 'inactive' } }] },
+          ],
+        },
+      }),
+    );
+    expect(result.customers).toEqual([
+      expect.objectContaining({ id: 7, name: 'Carlos Santos' }),
+    ]);
+    expect(result.snapshot.stale).toBe(false);
+  });
+
   it('rejects a campaign caption that changes a price fact', async () => {
     const prisma = {
       socialConnection: {
