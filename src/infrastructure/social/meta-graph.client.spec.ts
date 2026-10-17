@@ -75,4 +75,32 @@ describe('MetaGraphClient', () => {
       pictureUrl: 'https://platform-lookaside.fbsbx.com/customer.jpg',
     });
   });
+
+  it('checks a Page token without requesting the User permissions edge', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: 'page-1', name: 'Test Page' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const client = new MetaGraphClient(
+      new ConfigService({ META_GRAPH_VERSION: 'v26.0' }),
+    );
+
+    const result = await client.inspectPageToken(
+      'page-token',
+      ['pages_manage_posts', 'pages_messaging'],
+      ['CREATE_CONTENT', 'MESSAGING'],
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(requestUrl.pathname).toBe('/v26.0/me');
+    expect(requestUrl.searchParams.get('fields')).toBe('id,name');
+    expect(result.permissions).toEqual([
+      'pages_manage_posts',
+      'pages_messaging',
+    ]);
+    expect(result.tasks).toEqual(['CREATE_CONTENT', 'MESSAGING']);
+  });
 });

@@ -294,6 +294,8 @@ export class SocialService implements OnModuleInit, OnModuleDestroy {
     try {
       const credential = await this.meta.inspectPageToken(
         this.vault.decrypt(connection.tokenCiphertext),
+        connection.grantedPermissions,
+        connection.pageTasks,
       );
       const updated = await this.prisma.socialConnection.update({
         where: { id: connection.id },

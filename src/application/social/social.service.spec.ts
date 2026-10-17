@@ -13,6 +13,80 @@ import { MetaGraphClient } from '../../infrastructure/social/meta-graph.client.j
 import { SocialTokenVault } from '../../infrastructure/social/social-token-vault.js';
 import { SocialService } from './social.service.js';
 
+describe('SocialService connection health', () => {
+  it('reuses the OAuth permissions when checking a saved Page token', async () => {
+    const grantedPermissions = [
+      'pages_manage_posts',
+      'pages_manage_metadata',
+      'pages_messaging',
+    ];
+    const pageTasks = ['CREATE_CONTENT', 'MESSAGING'];
+    const connection = {
+      id: 'connection-1',
+      clientId: 'client-1',
+      storeId: 'store-1',
+      pageId: 'page-1',
+      pageName: 'Test Page',
+      tokenCiphertext: 'encrypted-page-token',
+      grantedPermissions,
+      pageTasks,
+      status: SocialConnectionStatus.ACTIVE,
+    };
+    const update = jest.fn(({ data }: { data: Record<string, unknown> }) =>
+      Promise.resolve({ ...connection, ...data }),
+    );
+    const prisma = {
+      socialConnection: {
+        findFirst: jest.fn().mockResolvedValue(connection),
+        update,
+      },
+    } as unknown as PrismaService;
+    const inspectPageToken = jest.fn().mockResolvedValue({
+      id: 'page-1',
+      name: 'Test Page',
+      accessToken: 'page-token',
+      permissions: grantedPermissions,
+      tasks: pageTasks,
+    });
+    const service = new SocialService(
+      prisma,
+      {} as ConfigService,
+      {
+        decrypt: jest.fn().mockReturnValue('page-token'),
+      } as unknown as SocialTokenVault,
+      { inspectPageToken } as unknown as MetaGraphClient,
+      {} as GeminiTextProvider,
+    );
+
+    const result = await service.checkConnection(
+      {
+        clientId: 'client-1',
+        storeId: 'store-1',
+      } as AuthenticatedDevice,
+      'connection-1',
+    );
+
+    expect(inspectPageToken).toHaveBeenCalledWith(
+      'page-token',
+      grantedPermissions,
+      pageTasks,
+    );
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0].where).toEqual({ id: 'connection-1' });
+    expect(update.mock.calls[0]?.[0].data).toMatchObject({
+      status: SocialConnectionStatus.ACTIVE,
+      grantedPermissions,
+      pageTasks,
+      lastError: null,
+    });
+    expect(result.capabilities).toEqual({
+      publish: true,
+      messaging: true,
+      webhooks: true,
+    });
+  });
+});
+
 describe('SocialService conversations', () => {
   it('keeps resolved conversations out of the active inbox', async () => {
     const findMany = jest.fn().mockResolvedValue([]);

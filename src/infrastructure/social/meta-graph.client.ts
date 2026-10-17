@@ -123,7 +123,11 @@ export class MetaGraphClient {
     };
   }
 
-  async inspectPageToken(pageAccessToken: string): Promise<MetaPageCredential> {
+  async inspectPageToken(
+    pageAccessToken: string,
+    knownPermissions: string[] = [],
+    knownTasks: string[] = [],
+  ): Promise<MetaPageCredential> {
     const url = this.graphUrl('/me');
     url.searchParams.set('fields', 'id,name');
     const page = await this.request<{
@@ -137,8 +141,8 @@ export class MetaGraphClient {
       id: page.id,
       name: page.name,
       accessToken: pageAccessToken,
-      tasks: [],
-      permissions: await this.permissions(pageAccessToken),
+      tasks: knownTasks,
+      permissions: knownPermissions,
     };
   }
 
