@@ -12,6 +12,7 @@ export const FEATURE_MOD_KEYS = [
   'customerGroups',
   'loyaltyPoints',
   'scheduledDeliveries',
+  'cylinderSwapping',
   'pettyCashReceivables',
   'specialReceipts',
   'customerReport',

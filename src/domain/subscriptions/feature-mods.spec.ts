@@ -17,11 +17,13 @@ describe('subscription entitlements', () => {
         reports: true,
         summaryCsv: true,
         discountReport: false,
+        cylinderSwapping: true,
         socialPublishing: true,
       }),
     ).toEqual({
       summaryCsv: true,
       discountReport: false,
+      cylinderSwapping: true,
       socialPublishing: true,
     });
     expect(() => validateFeatureMods({ unknownFeature: true })).toThrow(
