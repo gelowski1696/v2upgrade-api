@@ -545,7 +545,12 @@ export class PortalDashboardService {
         name: true,
         timezone: true,
         client: {
-          select: { id: true, code: true, businessName: true },
+          select: {
+            id: true,
+            code: true,
+            businessName: true,
+            group: { select: { id: true, code: true, name: true } },
+          },
         },
         activeSnapshot: {
           select: {

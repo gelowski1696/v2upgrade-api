@@ -34,6 +34,41 @@ describe('AdminPortalAccessService', () => {
     service = new AdminPortalAccessService(prisma as unknown as PrismaService);
   });
 
+  it('resolves a client group to its member client stores', async () => {
+    prisma.store.findMany.mockResolvedValue([
+      eligibleStore('store-1'),
+      {
+        ...eligibleStore('store-2'),
+        clientId: 'client-2',
+        client: {
+          ...eligibleStore('store-2').client,
+          id: 'client-2',
+          code: 'STORE-2',
+          businessName: 'Second Store',
+        },
+      },
+    ]);
+
+    const result = await service.candidates({ groupId: 'group-1' });
+
+    expect(prisma.store.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ client: { groupId: 'group-1' } }),
+      }),
+    );
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'store-1',
+          clientId: 'client-1',
+          groupId: 'group-1',
+          groupName: 'Connected Stores',
+        }),
+        expect.objectContaining({ id: 'store-2', clientId: 'client-2' }),
+      ]),
+    );
+  });
+
   it('creates one invitation containing every reviewed store', async () => {
     prisma.store.findMany.mockResolvedValue([
       eligibleStore('store-1'),
@@ -185,6 +220,7 @@ function eligibleStore(id: string) {
       businessName: 'Business',
       status: 'ACTIVE',
       groupId: 'group-1',
+      group: { code: 'CONNECTED', name: 'Connected Stores' },
     },
     activeSnapshot: {
       snapshotCreatedAt: new Date('2026-10-22T00:00:00.000Z'),

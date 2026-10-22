@@ -295,6 +295,9 @@ export class AdminPortalAccessService {
             businessName: true,
             status: true,
             groupId: true,
+            group: {
+              select: { code: true, name: true },
+            },
           },
         },
         activeSnapshot: {
@@ -325,6 +328,8 @@ export class AdminPortalAccessService {
       clientCode: store.client.code,
       clientName: store.client.businessName,
       groupId: store.client.groupId,
+      groupCode: store.client.group?.code ?? null,
+      groupName: store.client.group?.name ?? null,
       eligible: eligibility.eligible,
       exclusionReason: eligibility.eligible ? null : eligibility.reason,
       registeredDeviceCount: store.devices.length,
