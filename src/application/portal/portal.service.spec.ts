@@ -9,6 +9,8 @@ import { PortalService } from './portal.service.js';
 
 describe('PortalService refresh-token families', () => {
   const transaction = {
+    portalInvitation: { updateMany: jest.fn() },
+    portalUser: { create: jest.fn() },
     portalRefreshSession: {
       updateMany: jest.fn(),
       create: jest.fn(),
@@ -17,6 +19,7 @@ describe('PortalService refresh-token families', () => {
     auditLog: { create: jest.fn() },
   };
   const prisma = {
+    portalInvitation: { findUnique: jest.fn() },
     portalUser: {
       findUnique: jest.fn(),
       update: jest.fn(),
@@ -26,6 +29,7 @@ describe('PortalService refresh-token families', () => {
       create: jest.fn(),
     },
     device: { findMany: jest.fn() },
+    store: { findMany: jest.fn() },
     auditLog: { create: jest.fn() },
     $transaction: jest.fn(),
   };
@@ -55,9 +59,14 @@ describe('PortalService refresh-token families', () => {
       return Promise.all(input as Promise<unknown>[]);
     });
     prisma.device.findMany.mockResolvedValue([]);
+    prisma.store.findMany.mockResolvedValue([
+      { id: 'store-one' },
+      { id: 'store-two' },
+    ]);
     prisma.auditLog.create.mockResolvedValue({});
     transaction.auditLog.create.mockResolvedValue({});
     transaction.portalRefreshSession.update.mockResolvedValue({});
+    transaction.portalInvitation.updateMany.mockResolvedValue({ count: 1 });
     hasher.verify.mockResolvedValue(true);
     hasher.hash.mockResolvedValue('replacement-hash');
     jwt.signAsync.mockResolvedValue('access-token');
@@ -87,6 +96,44 @@ describe('PortalService refresh-token families', () => {
     expect(created.tokenFamilyId).toBe(created.id);
     expect(result.refreshToken.split('.')[0]).toBe(created.id);
     expect(result.refreshToken.split('.')[1]).toEqual(expect.any(String));
+  });
+
+  it('activates one invitation with access to every reviewed store', async () => {
+    prisma.portalInvitation.findUnique.mockResolvedValue({
+      id: 'invitation-one',
+      clientId: 'client-one',
+      storeId: 'store-one',
+      storeIds: ['store-one', 'store-two'],
+      username: 'owner@example.test',
+      displayName: 'Owner',
+      role: 'OWNER',
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    transaction.portalUser.create.mockResolvedValue({
+      ...portalUser(),
+      storeAccess: [{ storeId: 'store-one' }, { storeId: 'store-two' }],
+    });
+    prisma.portalRefreshSession.create.mockImplementation(
+      ({ data }: { data: { id: string } }) => ({ id: data.id }),
+    );
+
+    const result = await service.activate(
+      'multi-store-token',
+      'valid-password',
+      requestContext(),
+    );
+
+    expect(transaction.portalUser.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storeAccess: {
+          create: [{ storeId: 'store-one' }, { storeId: 'store-two' }],
+        },
+      }),
+      include: { storeAccess: true },
+    });
+    expect(result.user.storeIds).toEqual(['store-one', 'store-two']);
   });
 
   it('atomically rotates a refresh token within the same family', async () => {

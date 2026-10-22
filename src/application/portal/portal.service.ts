@@ -67,6 +67,7 @@ export class PortalService {
       data: {
         clientId: device.clientId,
         storeId: device.storeId,
+        storeIds: [device.storeId],
         username,
         displayName: input.displayName.trim(),
         role: input.role,
@@ -202,9 +203,12 @@ export class PortalService {
     ) {
       throw new UnauthorizedException('Activation link is invalid or expired.');
     }
-    if (
-      !(await this.enabledWebDashboardStoreIds([invitation.storeId])).length
-    ) {
+    const invitedStoreIds = invitation.storeIds.length
+      ? invitation.storeIds
+      : [invitation.storeId];
+    const enabledStoreIds =
+      await this.enabledWebDashboardStoreIds(invitedStoreIds);
+    if (enabledStoreIds.length !== invitedStoreIds.length) {
       throw new UnauthorizedException('Web dashboard access is not enabled.');
     }
     const passwordHash = await this.hasher.hash(password);
@@ -232,7 +236,9 @@ export class PortalService {
           role: invitation.role,
           status: 'ACTIVE',
           passwordChangedAt: new Date(),
-          storeAccess: { create: { storeId: invitation.storeId } },
+          storeAccess: {
+            create: enabledStoreIds.map((storeId) => ({ storeId })),
+          },
         },
         include: { storeAccess: true },
       });
@@ -243,6 +249,7 @@ export class PortalService {
           resourceId: created.id,
           metadata: {
             storeId: invitation.storeId,
+            storeIds: enabledStoreIds,
             invitationId: invitation.id,
           },
         },
@@ -818,13 +825,24 @@ export class PortalService {
     storeIds: string[],
   ): Promise<string[]> {
     if (!storeIds.length) return [];
-    const devices = await this.prisma.device.findMany({
-      where: { storeId: { in: storeIds }, status: 'ACTIVE' },
-      select: {
-        storeId: true,
-        subscription: { select: { entitlements: true } },
-      },
-    });
+    const [stores, devices] = await Promise.all([
+      this.prisma.store.findMany({
+        where: {
+          id: { in: storeIds },
+          status: 'ACTIVE',
+          client: { status: 'ACTIVE' },
+        },
+        select: { id: true },
+      }),
+      this.prisma.device.findMany({
+        where: { storeId: { in: storeIds }, status: 'ACTIVE' },
+        select: {
+          storeId: true,
+          subscription: { select: { entitlements: true } },
+        },
+      }),
+    ]);
+    const activeStores = new Set(stores.map((store) => store.id));
     const disabledStores = new Set(
       devices
         .filter(
@@ -834,7 +852,9 @@ export class PortalService {
         )
         .map((device) => device.storeId),
     );
-    return storeIds.filter((storeId) => !disabledStores.has(storeId));
+    return storeIds.filter(
+      (storeId) => activeStores.has(storeId) && !disabledStores.has(storeId),
+    );
   }
 
   private describeUserAgent(userAgent: string | null): string {

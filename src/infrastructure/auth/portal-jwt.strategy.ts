@@ -52,7 +52,9 @@ export class PortalJwtStrategy extends PassportStrategy(
           include: {
             client: { select: { status: true } },
             storeAccess: {
-              where: { store: { status: 'ACTIVE' } },
+              where: {
+                store: { status: 'ACTIVE', client: { status: 'ACTIVE' } },
+              },
               select: { storeId: true },
             },
           },

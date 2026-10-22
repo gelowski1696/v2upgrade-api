@@ -544,6 +544,9 @@ export class PortalDashboardService {
         code: true,
         name: true,
         timezone: true,
+        client: {
+          select: { id: true, code: true, businessName: true },
+        },
         activeSnapshot: {
           select: {
             schemaVersion: true,
@@ -552,7 +555,7 @@ export class PortalDashboardService {
           },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ client: { businessName: 'asc' } }, { name: 'asc' }],
     });
   }
 
