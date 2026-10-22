@@ -378,3 +378,23 @@ src/
 ```
 
 Dependency direction is `presentation -> application -> domain`; infrastructure implements domain ports and is bound only in Nest modules.
+
+
+Facebook Page connection
+Manual and AI-generated posts
+Approval, publishing, and cancellation
+Reusable templates
+Messenger receive/reply
+Claim, release, resolve, and reopen
+FAQ chatbot and cashier availability handoff
+Gemini reply suggestions
+
+
+Customer question received through Meta webhook
+Approved FAQ matched
+Automatic answer sent to Messenger
+Bot response recorded in Social Hub
+
+Away: chatbot answers matching FAQs.
+Available: chatbot stays silent so the cashier can respond.
+Claiming a conversation pauses automation for that customer.
