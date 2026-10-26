@@ -36,7 +36,7 @@ export interface OwnerAlert {
   storeId: string;
   storeName: string;
   severity: 'HIGH' | 'MEDIUM' | 'LOW';
-  type: 'SYNC' | 'INVENTORY' | 'RECEIVABLE' | 'DISCOUNT' | 'BACKUP';
+  type: 'SYNC' | 'INVENTORY' | 'RECEIVABLE' | 'DISCOUNT' | 'BACKUP' | 'OPERATIONS';
   title: string;
   detail: string;
   dismissible: boolean;
@@ -1531,7 +1531,15 @@ export class PortalDashboardService {
               dates.to,
             ),
           ]);
-          return { metrics: rows[0], cashFlow, highDiscountSales };
+          const advancedAlerts = await db.$queryRawUnsafe<Array<{ kind: string; count: number; amount: number }>>(
+            `SELECT 'REMITTANCE' AS kind, COUNT(*) AS count, CAST(COALESCE(SUM(shortage), 0) AS REAL) AS amount
+               FROM remittance_reconciliations WHERE status = 'SHORTAGE' AND date(shift_date) BETWEEN date(?) AND date(?)
+             UNION ALL
+             SELECT 'REORDER' AS kind, COUNT(*) AS count, 0 AS amount
+               FROM customer_reorder_notifications WHERE status = 'PENDING' AND date(due_at) <= date(?)`,
+            dates.from, dates.to, dates.to,
+          ).catch(() => []);
+          return { metrics: rows[0], cashFlow, highDiscountSales, advancedAlerts };
         });
         const metrics = result.data.metrics;
         const snapshotDate = store.activeSnapshot!.snapshotCreatedAt;
@@ -1570,6 +1578,7 @@ export class PortalDashboardService {
             discountPercent: Number(sale.discountPercent),
           })),
           netCashFlow: result.data.cashFlow.netCashFlow,
+          advancedAlerts: result.data.advancedAlerts,
         };
       }),
     );
@@ -1644,6 +1653,23 @@ export class PortalDashboardService {
           discountPercent: sale.discountPercent,
           dismissible: sale.discountPercent < 30,
         });
+      for (const alert of store.advancedAlerts ?? []) {
+        if (Number(alert.count) <= 0) continue;
+        const remittance = alert.kind === 'REMITTANCE';
+        alerts.push({
+          id: `advanced-${store.id}-${alert.kind}-${alert.count}-${alert.amount ?? 0}`,
+          storeId: store.id,
+          storeName: store.name,
+          severity: remittance ? 'HIGH' : 'MEDIUM',
+          type: 'OPERATIONS',
+          title: remittance ? 'Remittance shortage requires review' : 'Customers due for reorder',
+          detail: remittance
+            ? `${alert.count} reconciliation record(s) show a combined shortage.`
+            : `${alert.count} customer(s) have reached their reorder reminder window.`,
+          amount: remittance ? this.amount(alert.amount) : undefined,
+          dismissible: false,
+        });
+      }
     }
     const dismissibleAlertIds = alerts
       .filter((alert) => alert.dismissible)
