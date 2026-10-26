@@ -126,7 +126,7 @@ type ExportReport =
   | 'transfers'
   | 'customer-balances'
   | 'cash-flow';
-type CsvValue = string | number | null | undefined;
+type CsvValue = string | number | bigint | boolean | null | undefined;
 
 interface CsvDataset {
   headers: string[];
@@ -5943,8 +5943,9 @@ export class PortalDashboardService {
     range: DateRange,
     dataset: CsvDataset,
   ) {
-    const from = range.from?.slice(0, 10) || 'all';
-    const to = range.to?.slice(0, 10) || 'all';
+    const from =
+      typeof range.from === 'string' ? range.from.slice(0, 10) : 'all';
+    const to = typeof range.to === 'string' ? range.to.slice(0, 10) : 'all';
     const store = this.fileSegment(storeName) || 'store';
     return {
       fileName: `${store}-${report}-${from}-to-${to}.csv`,
@@ -5964,14 +5965,14 @@ export class PortalDashboardService {
     if (value === null || value === undefined) return '';
     if (typeof value === 'number')
       return Number.isFinite(value) ? String(value) : '';
-    let text = value;
+    let text = String(value);
     if (['=', '+', '-', '@'].includes(text.trimStart().charAt(0)))
       text = `'${text}`;
     return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   }
 
-  private fileSegment(value: string): string {
-    return value
+  private fileSegment(value: string | null | undefined): string {
+    return String(value ?? '')
       .normalize('NFKD')
       .replace(/[^a-zA-Z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
