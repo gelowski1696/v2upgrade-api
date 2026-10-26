@@ -160,7 +160,7 @@ export class PortalDashboardController {
   specialReceiptReport(
     @CurrentPortalUser() user: AuthenticatedPortalUser,
     @Param('storeId') storeId: string,
-    @Query() query: PortalDateRangeDto,
+    @Query() query: PortalPageQueryDto,
   ) {
     return this.dashboard.specialReceiptReport(user, storeId, query);
   }
@@ -169,7 +169,7 @@ export class PortalDashboardController {
   customerReport(
     @CurrentPortalUser() user: AuthenticatedPortalUser,
     @Param('storeId') storeId: string,
-    @Query() query: PortalDateRangeDto,
+    @Query() query: PortalPageQueryDto,
   ) {
     return this.dashboard.customerReport(user, storeId, query);
   }

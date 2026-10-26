@@ -482,6 +482,7 @@ interface CustomerModuleRow {
   reference: string;
   customer: string;
   address: string;
+  gas: string;
   groupName: string;
   itemCount: number;
   totalAmount: number;
@@ -1037,10 +1038,12 @@ export class PortalDashboardService {
   specialReceiptReport(
     user: AuthenticatedPortalUser,
     storeId: string,
-    range: DateRange,
+    input: PagedReportQuery | DateRange,
   ) {
     this.authorize(user, storeId);
-    const dates = this.requiredDateRange(range);
+    const dates = this.requiredDateRange(input);
+    const page = 'page' in input ? input.page : 1;
+    const pageSize = 'pageSize' in input ? input.pageSize : 25;
     return this.withFreshness(storeId, async (db) => {
       await this.requireFeatureMod(
         db,
@@ -1048,8 +1051,13 @@ export class PortalDashboardService {
         'specialReceipts',
         'Special Receipts',
       );
-      const rows = await db.$queryRawUnsafe<SpecialReceiptModuleRow[]>(
-        `SELECT CAST(salesid AS INTEGER) AS salesId,
+      const sourceSql = `FROM salestbl
+          WHERE salesdate >= ? AND salesdate < datetime(?, '+1 day')
+            AND UPPER(COALESCE(spreceipt, 'N')) = 'Y'
+            AND UPPER(COALESCE(salestatus, '')) <> 'CANCELLED'`;
+      const [rows, aggregateRows] = await Promise.all([
+        db.$queryRawUnsafe<SpecialReceiptModuleRow[]>(
+          `SELECT CAST(salesid AS INTEGER) AS salesId,
                 COALESCE(salesdate, '') AS salesDate,
                 TRIM(COALESCE(salesrefnum, '')) AS reference,
                 TRIM(COALESCE(salescust, 'Walk-in')) AS customer,
@@ -1058,14 +1066,23 @@ export class PortalDashboardService {
                 CAST(COALESCE(salestotalamount, 0) AS REAL) AS totalAmount,
                 TRIM(COALESCE(salespaym, '')) AS paymentMethod,
                 TRIM(COALESCE(salescashier, '')) AS cashier
-           FROM salestbl
-          WHERE salesdate >= ? AND salesdate < datetime(?, '+1 day')
-            AND UPPER(COALESCE(spreceipt, 'N')) = 'Y'
-            AND UPPER(COALESCE(salestatus, '')) <> 'CANCELLED'
-          ORDER BY datetime(salesdate) DESC, salesid DESC`,
-        dates.from,
-        dates.to,
-      );
+           ${sourceSql}
+          ORDER BY datetime(salesdate) DESC, salesid DESC
+          LIMIT ? OFFSET ?`,
+          dates.from,
+          dates.to,
+          pageSize,
+          (page - 1) * pageSize,
+        ),
+        db.$queryRawUnsafe<Array<{ total: number; totalAmount: number }>>(
+          `SELECT CAST(COUNT(*) AS INTEGER) AS total,
+                  CAST(COALESCE(SUM(salestotalamount), 0) AS REAL) AS totalAmount
+             ${sourceSql}`,
+          dates.from,
+          dates.to,
+        ),
+      ]);
+      const aggregate = aggregateRows[0];
       return {
         items: rows.map((row) => ({
           ...row,
@@ -1073,10 +1090,10 @@ export class PortalDashboardService {
           itemCount: Number(row.itemCount),
           totalAmount: this.amount(row.totalAmount),
         })),
-        totalAmount: rows.reduce(
-          (sum, row) => sum + this.amount(row.totalAmount),
-          0,
-        ),
+        totalAmount: this.amount(aggregate?.totalAmount),
+        total: Number(aggregate?.total ?? 0),
+        page,
+        pageSize,
       };
     });
   }
@@ -1084,10 +1101,12 @@ export class PortalDashboardService {
   customerReport(
     user: AuthenticatedPortalUser,
     storeId: string,
-    range: DateRange,
+    input: PagedReportQuery | DateRange,
   ) {
     this.authorize(user, storeId);
-    const dates = this.requiredDateRange(range);
+    const dates = this.requiredDateRange(input);
+    const page = 'page' in input ? input.page : 1;
+    const pageSize = 'pageSize' in input ? input.pageSize : 25;
     return this.withFreshness(storeId, async (db) => {
       await this.requireFeatureMod(
         db,
@@ -1095,25 +1114,52 @@ export class PortalDashboardService {
         'customerReport',
         'Customer Report',
       );
-      const rows = await db.$queryRawUnsafe<CustomerModuleRow[]>(
-        `SELECT CAST(sales.salesid AS INTEGER) AS salesId,
-                COALESCE(sales.salesdate, '') AS salesDate,
-                TRIM(COALESCE(sales.salesrefnum, '')) AS reference,
-                TRIM(COALESCE(sales.salescust, 'Walk-in')) AS customer,
-                TRIM(COALESCE(sales.salescustadd, '')) AS address,
-                TRIM(COALESCE(groups.name, 'Ungrouped')) AS groupName,
-                CAST(COALESCE(sales.salestotalitem, 0) AS INTEGER) AS itemCount,
-                CAST(COALESCE(sales.salestotalamount, 0) AS REAL) AS totalAmount
-           FROM salestbl sales
+      const customerInfoExists = await this.tableExists(db, 'custinfo');
+      const customerInfoColumns = customerInfoExists
+        ? await this.tableColumns(db, 'custinfo')
+        : new Set<string>();
+      const customerInfoJoin = customerInfoExists
+        ? `LEFT JOIN custinfo customer_info
+             ON customer_info.custid = CAST(COALESCE(sales.salescustid, 0) AS INTEGER)`
+        : '';
+      const gasExpression = customerInfoColumns.has('custemail')
+        ? "TRIM(COALESCE(customer_info.custemail, ''))"
+        : "''";
+      const sourceSql = `FROM salestbl sales
+           ${customerInfoJoin}
            LEFT JOIN customer_group_members members
              ON members.customer_id = CAST(COALESCE(sales.salescustid, 0) AS INTEGER)
            LEFT JOIN customer_groups groups ON groups.group_id = members.group_id
           WHERE sales.salesdate >= ? AND sales.salesdate < datetime(?, '+1 day')
-            AND UPPER(COALESCE(sales.salestatus, '')) <> 'CANCELLED'
-          ORDER BY datetime(sales.salesdate) DESC, sales.salesid DESC`,
-        dates.from,
-        dates.to,
-      );
+            AND UPPER(COALESCE(sales.salestatus, '')) <> 'CANCELLED'`;
+      const [rows, aggregateRows] = await Promise.all([
+        db.$queryRawUnsafe<CustomerModuleRow[]>(
+          `SELECT CAST(sales.salesid AS INTEGER) AS salesId,
+                COALESCE(sales.salesdate, '') AS salesDate,
+                TRIM(COALESCE(sales.salesrefnum, '')) AS reference,
+                TRIM(COALESCE(sales.salescust, 'Walk-in')) AS customer,
+                TRIM(COALESCE(sales.salescustadd, '')) AS address,
+                ${gasExpression} AS gas,
+                TRIM(COALESCE(groups.name, 'Ungrouped')) AS groupName,
+                CAST(COALESCE(sales.salestotalitem, 0) AS INTEGER) AS itemCount,
+                CAST(COALESCE(sales.salestotalamount, 0) AS REAL) AS totalAmount
+           ${sourceSql}
+          ORDER BY datetime(sales.salesdate) DESC, sales.salesid DESC
+          LIMIT ? OFFSET ?`,
+          dates.from,
+          dates.to,
+          pageSize,
+          (page - 1) * pageSize,
+        ),
+        db.$queryRawUnsafe<Array<{ total: number; totalAmount: number }>>(
+          `SELECT CAST(COUNT(*) AS INTEGER) AS total,
+                  CAST(COALESCE(SUM(sales.salestotalamount), 0) AS REAL) AS totalAmount
+             ${sourceSql}`,
+          dates.from,
+          dates.to,
+        ),
+      ]);
+      const aggregate = aggregateRows[0];
       return {
         items: rows.map((row) => ({
           ...row,
@@ -1121,10 +1167,10 @@ export class PortalDashboardService {
           itemCount: Number(row.itemCount),
           totalAmount: this.amount(row.totalAmount),
         })),
-        totalAmount: rows.reduce(
-          (sum, row) => sum + this.amount(row.totalAmount),
-          0,
-        ),
+        totalAmount: this.amount(aggregate?.totalAmount),
+        total: Number(aggregate?.total ?? 0),
+        page,
+        pageSize,
       };
     });
   }

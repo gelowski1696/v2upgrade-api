@@ -1009,6 +1009,7 @@ describe('PortalDashboardService report parity', () => {
       ['inventory', 'Warehouse fill'],
       ['transfers', 'Payment status'],
       ['customer-balances', 'Balance'],
+      ['customer-sales-history', 'Customer ID'],
       ['cash-flow', 'Closing cash position'],
     ] as const;
 
