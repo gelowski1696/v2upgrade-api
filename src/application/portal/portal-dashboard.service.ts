@@ -4002,7 +4002,7 @@ export class PortalDashboardService {
               'Customer',
               'Address',
               'Contact',
-              'Email',
+              'GAS',
               'Joined',
               'Status',
               'Balance',
