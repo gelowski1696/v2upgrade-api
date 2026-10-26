@@ -4054,7 +4054,10 @@ export class PortalDashboardService {
 
         if (report === 'customer-sales-history') {
           const dates = this.requiredDateRange(range);
-          const search = range.search?.trim().toLowerCase();
+          const search =
+            typeof range.search === 'string'
+              ? range.search.trim().toLowerCase()
+              : '';
           const rows = await db.$queryRawUnsafe<
             Array<{
               customerId: number;
@@ -4086,12 +4089,15 @@ export class PortalDashboardService {
             dates.from,
             dates.to,
           );
-          const items = rows.filter(
-            (item) =>
+          const items = rows.filter((item) => {
+            const customerName = String(item.customerName ?? '');
+            const reference = String(item.reference ?? '');
+            return (
               !search ||
-              item.customerName.toLowerCase().includes(search) ||
-              item.reference.toLowerCase().includes(search),
-          );
+              customerName.toLowerCase().includes(search) ||
+              reference.toLowerCase().includes(search)
+            );
+          });
           return {
             headers: [
               'Customer ID',
@@ -4120,15 +4126,24 @@ export class PortalDashboardService {
 
         if (report === 'customer-lend-history') {
           const dates = this.requiredDateRange(range);
-          const search = range.search?.trim().toLowerCase();
+          const search =
+            typeof range.search === 'string'
+              ? range.search.trim().toLowerCase()
+              : '';
           const items = (
             await this.customerLendHistoryRows(db, dates)
           ).filter(
-            (item) =>
-              !search ||
-              item.customerName.toLowerCase().includes(search) ||
-              item.reference.toLowerCase().includes(search) ||
-              item.itemName.toLowerCase().includes(search),
+            (item) => {
+              const customerName = String(item.customerName ?? '');
+              const reference = String(item.reference ?? '');
+              const itemName = String(item.itemName ?? '');
+              return (
+                !search ||
+                customerName.toLowerCase().includes(search) ||
+                reference.toLowerCase().includes(search) ||
+                itemName.toLowerCase().includes(search)
+              );
+            },
           );
           return {
             headers: [
