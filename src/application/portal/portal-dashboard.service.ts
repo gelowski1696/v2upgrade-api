@@ -115,6 +115,10 @@ interface CustomerBalanceTotalRow {
 
 type ExportReport =
   | 'sales'
+  | 'customers'
+  | 'customer-sales-history'
+  | 'customer-lend-history'
+  | 'personnel'
   | 'inventory'
   | 'inventory-forecast'
   | 'profitability'
@@ -358,6 +362,42 @@ interface CustomerPurchaseRow {
   itemCount: number;
   totalAmount: number;
   tenderBalance: number;
+}
+
+interface CustomerDirectoryRow {
+  id: number;
+  name: string;
+  address: string;
+  contact: string;
+  email: string;
+  joinedAt: string;
+  balance: number;
+  lentQuantity: number;
+  status: string;
+}
+
+interface PersonnelDirectoryRow {
+  id: number;
+  name: string;
+  address: string;
+  contact: string;
+  role: string;
+  transactionCount: number;
+  totalPay: number;
+  createdAt: string;
+  totalSalary: number;
+  card: string;
+}
+
+interface CustomerLendHistoryRow {
+  historyDate: string;
+  reference: string;
+  customerId: number;
+  customerName: string;
+  itemCode: string;
+  itemName: string;
+  quantity: number;
+  status: 'LENDED' | 'RETURNED';
 }
 
 interface PaymentChannelRow {
@@ -1022,8 +1062,7 @@ export class PortalDashboardService {
           WHERE salesdate >= ? AND salesdate < datetime(?, '+1 day')
             AND UPPER(COALESCE(spreceipt, 'N')) = 'Y'
             AND UPPER(COALESCE(salestatus, '')) <> 'CANCELLED'
-          ORDER BY datetime(salesdate) DESC, salesid DESC
-          LIMIT 500`,
+          ORDER BY datetime(salesdate) DESC, salesid DESC`,
         dates.from,
         dates.to,
       );
@@ -1071,8 +1110,7 @@ export class PortalDashboardService {
            LEFT JOIN customer_groups groups ON groups.group_id = members.group_id
           WHERE sales.salesdate >= ? AND sales.salesdate < datetime(?, '+1 day')
             AND UPPER(COALESCE(sales.salestatus, '')) <> 'CANCELLED'
-          ORDER BY datetime(sales.salesdate) DESC, sales.salesid DESC
-          LIMIT 500`,
+          ORDER BY datetime(sales.salesdate) DESC, sales.salesid DESC`,
         dates.from,
         dates.to,
       );
@@ -2496,6 +2534,71 @@ export class PortalDashboardService {
     });
   }
 
+  customers(
+    user: AuthenticatedPortalUser,
+    storeId: string,
+    input: PagedReportQuery,
+  ) {
+    this.authorize(user, storeId);
+    return this.withFreshness(storeId, async (db) => {
+      const rows = await this.customerDirectoryRows(db, input);
+      const start = (input.page - 1) * input.pageSize;
+      return {
+        items: rows.slice(start, start + input.pageSize),
+        total: rows.length,
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    });
+  }
+
+  personnel(
+    user: AuthenticatedPortalUser,
+    storeId: string,
+    input: PagedReportQuery,
+  ) {
+    this.authorize(user, storeId);
+    return this.withFreshness(storeId, async (db) => {
+      const rows = await this.personnelDirectoryRows(db, input.search);
+      const start = (input.page - 1) * input.pageSize;
+      return {
+        items: rows.slice(start, start + input.pageSize),
+        total: rows.length,
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    });
+  }
+
+  customerLendHistory(
+    user: AuthenticatedPortalUser,
+    storeId: string,
+    customerId: number,
+    input: CustomerPurchaseHistoryQuery,
+  ) {
+    this.authorize(user, storeId);
+    const range = this.requiredDateRange(input);
+    return this.withFreshness(storeId, async (db) => {
+      const customer = await db.customer.findUnique({ where: { id: customerId } });
+      if (!customer) throw new NotFoundException('Customer was not found.');
+      const rows = await this.customerLendHistoryRows(db, range, customerId);
+      const start = (input.page - 1) * input.pageSize;
+      return {
+        customer: {
+          id: customer.id,
+          name: customer.name?.trim() || 'Unnamed customer',
+          contact: customer.contact?.trim() ?? '',
+          balance: this.amount(customer.balance),
+          status: customer.status?.trim() || 'active',
+        },
+        items: rows.slice(start, start + input.pageSize),
+        total: rows.length,
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    });
+  }
+
   sales(
     user: AuthenticatedPortalUser,
     storeId: string,
@@ -3891,6 +3994,166 @@ export class PortalDashboardService {
     const response = await this.withFreshness<CsvDataset>(
       storeId,
       async (db) => {
+        if (report === 'customers') {
+          const items = await this.customerDirectoryRows(db, range);
+          return {
+            headers: [
+              'Customer ID',
+              'Customer',
+              'Address',
+              'Contact',
+              'Email',
+              'Joined',
+              'Status',
+              'Balance',
+              'Lent quantity',
+            ],
+            rows: items.map((item) => [
+              item.id,
+              item.name,
+              item.address,
+              item.contact,
+              item.email,
+              item.joinedAt,
+              item.status,
+              item.balance,
+              item.lentQuantity,
+            ]),
+          };
+        }
+
+        if (report === 'personnel') {
+          const items = await this.personnelDirectoryRows(db, range.search);
+          return {
+            headers: [
+              'Personnel ID',
+              'Name',
+              'Role',
+              'Address',
+              'Contact',
+              'Card',
+              'Created',
+              'Transactions',
+              'Total pay',
+              'Total salary',
+            ],
+            rows: items.map((item) => [
+              item.id,
+              item.name,
+              item.role,
+              item.address,
+              item.contact,
+              item.card,
+              item.createdAt,
+              item.transactionCount,
+              item.totalPay,
+              item.totalSalary,
+            ]),
+          };
+        }
+
+        if (report === 'customer-sales-history') {
+          const dates = this.requiredDateRange(range);
+          const search = range.search?.trim().toLowerCase();
+          const rows = await db.$queryRawUnsafe<
+            Array<{
+              customerId: number;
+              customerName: string;
+              saleDate: string;
+              reference: string;
+              payment: string;
+              status: string;
+              itemCount: number;
+              totalAmount: number;
+              balance: number;
+            }>
+          >(
+            `SELECT CAST(COALESCE(c.custid, 0) AS INTEGER) AS customerId,
+                    TRIM(COALESCE(c.custname, '')) AS customerName,
+                    COALESCE(s.salesdate, '') AS saleDate,
+                    TRIM(COALESCE(s.salesrefnum, '')) AS reference,
+                    TRIM(COALESCE(s.salespaym, '')) AS payment,
+                    TRIM(COALESCE(s.salestatus, '')) AS status,
+                    CAST(COALESCE(s.salestotalitem, 0) AS INTEGER) AS itemCount,
+                    CAST(COALESCE(s.salestotalamount, 0) AS REAL) AS totalAmount,
+                    CAST(COALESCE(s.tenderbalance, 0) AS REAL) AS balance
+               FROM salestbl s
+               INNER JOIN custinfo c ON c.custid = s.salescustid
+              WHERE date(s.salesdate) BETWEEN date(?) AND date(?)
+                AND UPPER(TRIM(COALESCE(s.salestatus, ''))) <> 'CANCELLED'
+              ORDER BY c.custname COLLATE NOCASE,
+                       datetime(s.salesdate) DESC, s.salesid DESC`,
+            dates.from,
+            dates.to,
+          );
+          const items = rows.filter(
+            (item) =>
+              !search ||
+              item.customerName.toLowerCase().includes(search) ||
+              item.reference.toLowerCase().includes(search),
+          );
+          return {
+            headers: [
+              'Customer ID',
+              'Customer',
+              'Date',
+              'Reference',
+              'Payment',
+              'Status',
+              'Items',
+              'Total',
+              'Balance',
+            ],
+            rows: items.map((item) => [
+              item.customerId,
+              item.customerName,
+              item.saleDate,
+              item.reference,
+              item.payment,
+              item.status,
+              item.itemCount,
+              item.totalAmount,
+              item.balance,
+            ]),
+          };
+        }
+
+        if (report === 'customer-lend-history') {
+          const dates = this.requiredDateRange(range);
+          const search = range.search?.trim().toLowerCase();
+          const items = (
+            await this.customerLendHistoryRows(db, dates)
+          ).filter(
+            (item) =>
+              !search ||
+              item.customerName.toLowerCase().includes(search) ||
+              item.reference.toLowerCase().includes(search) ||
+              item.itemName.toLowerCase().includes(search),
+          );
+          return {
+            headers: [
+              'Customer ID',
+              'Customer',
+              'Date',
+              'Reference',
+              'Item code',
+              'Item',
+              'Quantity',
+              'Status',
+            ],
+            rows: items.map((item) => [
+              item.customerId,
+              item.customerName,
+              item.historyDate,
+              item.reference,
+              item.itemCode,
+              item.itemName,
+              item.quantity,
+              item.status,
+            ]),
+          };
+        }
+
         if (report === 'customer-insights') {
           const dates = this.requiredDateRange(range);
           const search = range.search?.trim().toLowerCase();
@@ -5111,6 +5374,133 @@ export class PortalDashboardService {
     return new Set(rows.map((row) => row.name.toLowerCase()));
   }
 
+  private async customerDirectoryRows(
+    db: StorePrismaClient,
+    input: Pick<ReportQuery, 'search' | 'status'>,
+  ): Promise<CustomerDirectoryRow[]> {
+    if (!(await this.tableExists(db, 'custinfo'))) return [];
+    const columns = await this.tableColumns(db, 'custinfo');
+    const value = (column: string, fallback: string) =>
+      columns.has(column.toLowerCase()) ? column : fallback;
+    const rows = await db.$queryRawUnsafe<CustomerDirectoryRow[]>(
+      `SELECT CAST(custid AS INTEGER) AS id,
+              TRIM(COALESCE(custname, '')) AS name,
+              TRIM(COALESCE(${value('custadd', "''")}, '')) AS address,
+              TRIM(COALESCE(custcontnum, '')) AS contact,
+              TRIM(COALESCE(${value('custemail', "''")}, '')) AS email,
+              COALESCE(${value('custdate', "''")}, '') AS joinedAt,
+              CAST(COALESCE(custbalance, 0) AS REAL) AS balance,
+              CAST(COALESCE(${value('lendqty', '0')}, 0) AS INTEGER) AS lentQuantity,
+              CASE WHEN lower(trim(COALESCE(custstatus, 'active'))) = 'inactive'
+                   THEN 'inactive' ELSE 'active' END AS status
+         FROM custinfo
+        ORDER BY custname COLLATE NOCASE, custid`,
+    );
+    const search = input.search?.trim().toLowerCase();
+    const status = input.status?.trim().toLowerCase();
+    return rows
+      .map((row) => ({
+        ...row,
+        id: Number(row.id),
+        balance: this.amount(row.balance),
+        lentQuantity: Number(row.lentQuantity ?? 0),
+      }))
+      .filter(
+        (row) =>
+          (!search ||
+            [row.name, row.address, row.contact, row.email].some((text) =>
+              text.toLowerCase().includes(search),
+            )) &&
+          (!status || row.status === status),
+      );
+  }
+
+  private async personnelDirectoryRows(
+    db: StorePrismaClient,
+    searchValue?: string,
+  ): Promise<PersonnelDirectoryRow[]> {
+    if (!(await this.tableExists(db, 'personeltbl'))) return [];
+    const columns = await this.tableColumns(db, 'personeltbl');
+    const value = (column: string, fallback: string) =>
+      columns.has(column.toLowerCase()) ? column : fallback;
+    const rows = await db.$queryRawUnsafe<PersonnelDirectoryRow[]>(
+      `SELECT CAST(pid AS INTEGER) AS id,
+              TRIM(COALESCE(pname, '')) AS name,
+              TRIM(COALESCE(${value('paddress', "''")}, '')) AS address,
+              TRIM(COALESCE(${value('pcontactnum', "''")}, '')) AS contact,
+              TRIM(COALESCE(${value('prole', "''")}, '')) AS role,
+              CAST(COALESCE(${value('ptrans', '0')}, 0) AS INTEGER) AS transactionCount,
+              CAST(COALESCE(${value('ptotalpay', '0')}, 0) AS REAL) AS totalPay,
+              COALESCE(${value('pcreatedate', "''")}, '') AS createdAt,
+              CAST(COALESCE(${value('ptotalsalary', '0')}, 0) AS REAL) AS totalSalary,
+              TRIM(COALESCE(${value('pcard', "''")}, '')) AS card
+         FROM personeltbl
+        ORDER BY pname COLLATE NOCASE, pid`,
+    );
+    const search = searchValue?.trim().toLowerCase();
+    return rows
+      .map((row) => ({
+        ...row,
+        id: Number(row.id),
+        transactionCount: Number(row.transactionCount ?? 0),
+        totalPay: this.amount(row.totalPay),
+        totalSalary: this.amount(row.totalSalary),
+      }))
+      .filter(
+        (row) =>
+          !search ||
+          [row.name, row.role, row.contact, row.address].some((text) =>
+            text.toLowerCase().includes(search),
+          ),
+      );
+  }
+
+  private async customerLendHistoryRows(
+    db: StorePrismaClient,
+    range: { from: string; to: string },
+    customerId?: number,
+  ): Promise<CustomerLendHistoryRow[]> {
+    if (
+      !(await this.tableExists(db, 'itemhistorytbl')) ||
+      !(await this.tableExists(db, 'lendhistory'))
+    ) {
+      return [];
+    }
+    const lendColumns = await this.tableColumns(db, 'lendhistory');
+    const customerIdColumn = lendColumns.has('lendcustid')
+      ? 'CAST(COALESCE(l.lendcustid, 0) AS INTEGER)'
+      : '0';
+    const rows = await db.$queryRawUnsafe<CustomerLendHistoryRow[]>(
+      `SELECT COALESCE(h.itemhdate, '') AS historyDate,
+              TRIM(COALESCE(h.itemhrefnum, '')) AS reference,
+              ${customerIdColumn} AS customerId,
+              TRIM(COALESCE(l.lendcustname, '')) AS customerName,
+              TRIM(COALESCE(h.itemhitemc, '')) AS itemCode,
+              TRIM(COALESCE(l.lenditemname, '')) AS itemName,
+              CAST(COALESCE(h.itemhqty, 0) AS INTEGER) AS quantity,
+              CASE WHEN h.itemhremarks LIKE '%DECREASE LEND QTY FROM RETURN ITEM%'
+                   THEN 'RETURNED' ELSE 'LENDED' END AS status
+         FROM itemhistorytbl h
+         INNER JOIN lendhistory l
+                 ON h.itemhrefnum = l.lendrefnum
+                AND h.itemhitemc = l.lenditemcode
+        WHERE upper(trim(COALESCE(l.lendstatus, ''))) <> 'R-DELETED'
+          AND date(h.itemhdate) BETWEEN date(?) AND date(?)
+          AND (h.itemhremarks LIKE '%LEND ITEM%'
+               OR h.itemhremarks LIKE '%DECREASE LEND QTY FROM RETURN ITEM%')
+          ${customerId === undefined ? '' : `AND ${customerIdColumn} = ?`}
+        ORDER BY datetime(h.itemhdate) DESC, h.itemhid DESC`,
+      range.from,
+      range.to,
+      ...(customerId === undefined ? [] : [customerId]),
+    );
+    return rows.map((row) => ({
+      ...row,
+      customerId: Number(row.customerId),
+      quantity: Number(row.quantity ?? 0),
+    }));
+  }
+
   private async inventoryPriceMap(
     db: StorePrismaClient,
     itemIds: number[],
@@ -5518,6 +5908,10 @@ export class PortalDashboardService {
   private isExportReport(report: string): report is ExportReport {
     return [
       'sales',
+      'customers',
+      'customer-sales-history',
+      'customer-lend-history',
+      'personnel',
       'inventory',
       'inventory-forecast',
       'profitability',

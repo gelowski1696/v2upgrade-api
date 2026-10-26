@@ -243,6 +243,39 @@ export class PortalDashboardController {
     );
   }
 
+  @Get('stores/:storeId/customers')
+  customers(
+    @CurrentPortalUser() user: AuthenticatedPortalUser,
+    @Param('storeId') storeId: string,
+    @Query() query: PortalPageQueryDto,
+  ) {
+    return this.dashboard.customers(user, storeId, query);
+  }
+
+  @Get('stores/:storeId/personnel')
+  personnel(
+    @CurrentPortalUser() user: AuthenticatedPortalUser,
+    @Param('storeId') storeId: string,
+    @Query() query: PortalPageQueryDto,
+  ) {
+    return this.dashboard.personnel(user, storeId, query);
+  }
+
+  @Get('stores/:storeId/customers/:customerId/lend-history')
+  customerLendHistory(
+    @CurrentPortalUser() user: AuthenticatedPortalUser,
+    @Param('storeId') storeId: string,
+    @Param('customerId', ParseIntPipe) customerId: number,
+    @Query() query: PortalPageQueryDto,
+  ) {
+    return this.dashboard.customerLendHistory(
+      user,
+      storeId,
+      customerId,
+      query,
+    );
+  }
+
   @Get('stores/:storeId/sales')
   sales(
     @CurrentPortalUser() user: AuthenticatedPortalUser,

@@ -32,6 +32,8 @@ export const PORTAL_SAVED_VIEW_REPORTS = [
   'inventory-forecast',
   'transfers',
   'balances',
+  'customers',
+  'personnel',
   'cash-flow',
   'restocks',
   'products',
