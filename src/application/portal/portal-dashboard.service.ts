@@ -488,6 +488,12 @@ interface CustomerModuleRow {
   totalAmount: number;
 }
 
+interface PeakHourModuleRow {
+  hour: number | bigint;
+  transactions: number | bigint;
+  grossSales: number | bigint | null;
+}
+
 const DEFAULT_OVERVIEW_METRICS = [
   'GROSS_SALES',
   'RECORDED_GROSS_PROFIT',
@@ -514,6 +520,7 @@ const SAVED_VIEW_REPORTS = [
   'purchase-report',
   'special-receipts',
   'customer-report',
+  'peak-hours',
   'customer-insights',
 ] as const;
 
@@ -886,7 +893,7 @@ export class PortalDashboardService {
             `SELECT feature_key AS key,
                 CAST(enabled AS INTEGER) AS enabled
            FROM owner_feature_mods
-          WHERE feature_key IN ('summaryCsv', 'financialReport', 'discountReport', 'purchases', 'specialReceipts', 'customerReport')
+          WHERE feature_key IN ('summaryCsv', 'financialReport', 'discountReport', 'purchases', 'specialReceipts', 'customerReport', 'peakHours')
           ORDER BY feature_key`,
           )
         : [];
@@ -898,6 +905,7 @@ export class PortalDashboardService {
         discountReport: 'discount-report',
         financialReport: 'financial-report',
         purchases: 'purchase-report',
+        peakHours: 'peak-hours',
         specialReceipts: 'special-receipts',
         summaryCsv: 'inventory-summary',
       })
@@ -1171,6 +1179,50 @@ export class PortalDashboardService {
         total: Number(aggregate?.total ?? 0),
         page,
         pageSize,
+      };
+    });
+  }
+
+  peakHoursReport(
+    user: AuthenticatedPortalUser,
+    storeId: string,
+    range: DateRange,
+  ) {
+    this.authorize(user, storeId);
+    const dates = this.requiredDateRange(range);
+    return this.withFreshness(storeId, async (db) => {
+      await this.requireFeatureMod(db, storeId, 'peakHours', 'Peak Hours');
+      const rows = await db.$queryRawUnsafe<PeakHourModuleRow[]>(
+        `SELECT CAST(strftime('%H', salesdate) AS INTEGER) AS hour,
+                COUNT(*) AS transactions,
+                CAST(COALESCE(SUM(salestotalamount), 0) AS REAL) AS grossSales
+           FROM salestbl
+          WHERE salesdate >= ? AND salesdate < datetime(?, '+1 day')
+            AND UPPER(COALESCE(salestatus, '')) <> 'CANCELLED'
+          GROUP BY hour
+          ORDER BY hour`,
+        dates.from,
+        dates.to,
+      );
+      const items = rows.map((row) => {
+        const hour = Number(row.hour);
+        return {
+          hour,
+          label: `${String(hour).padStart(2, '0')}:00`,
+          transactions: Number(row.transactions),
+          grossSales: this.amount(Number(row.grossSales ?? 0)),
+        };
+      });
+      return {
+        items,
+        totalTransactions: items.reduce(
+          (total, row) => total + row.transactions,
+          0,
+        ),
+        totalGrossSales: items.reduce(
+          (total, row) => total + row.grossSales,
+          0,
+        ),
       };
     });
   }

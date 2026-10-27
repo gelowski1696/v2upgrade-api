@@ -46,6 +46,7 @@ export const PORTAL_SAVED_VIEW_REPORTS = [
   'purchase-report',
   'special-receipts',
   'customer-report',
+  'peak-hours',
   'customer-insights',
 ] as const;
 

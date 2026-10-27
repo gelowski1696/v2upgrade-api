@@ -762,6 +762,7 @@ describe('PortalDashboardService report parity', () => {
         'discount-report',
         'financial-report',
         'purchase-report',
+        'peak-hours',
         'special-receipts',
         'inventory-summary',
       ],
@@ -775,6 +776,7 @@ describe('PortalDashboardService report parity', () => {
           'customer-report',
           'discount-report',
           'purchase-report',
+          'peak-hours',
           'special-receipts',
           'inventory-summary',
         ],
@@ -796,6 +798,39 @@ describe('PortalDashboardService report parity', () => {
 
     expect(capabilities.data.reports).not.toContain('inventory-summary');
     expect(capabilities.data.reports).toContain('discount-report');
+  });
+
+  it('exposes Peak Hours when the active subscription enables it', async () => {
+    const database = new BetterSqlite3(snapshotPath);
+    database
+      .prepare(
+        "UPDATE owner_feature_mods SET enabled = 0 WHERE feature_key = 'peakHours'",
+      )
+      .run();
+    database.close();
+    deviceFindFirst.mockResolvedValue({
+      subscription: { entitlements: { peakHours: true } },
+    });
+
+    try {
+      const capabilities = await service.reportCapabilities(user, storeId);
+      expect(capabilities.data.reports).toContain('peak-hours');
+
+      const report = await service.peakHoursReport(user, storeId, {
+        from: '2026-09-01',
+        to: '2026-09-30',
+      });
+      expect(report.data.totalTransactions).toBe(2);
+    } finally {
+      deviceFindFirst.mockResolvedValue(null);
+      const restore = new BetterSqlite3(snapshotPath);
+      restore
+        .prepare(
+          "UPDATE owner_feature_mods SET enabled = 1 WHERE feature_key = 'peakHours'",
+        )
+        .run();
+      restore.close();
+    }
   });
 
   it('returns enabled Summary CSV and Financial Report data with desktop parity', async () => {
@@ -840,12 +875,13 @@ describe('PortalDashboardService report parity', () => {
   it('matches the remaining enabled desktop Feature Mod reports', async () => {
     const range = { from: '2026-09-01', to: '2026-09-30' };
     const pagedRange = { ...range, page: 1, pageSize: 25 };
-    const [discounts, purchases, specialReceipts, customers] =
+    const [discounts, purchases, specialReceipts, customers, peakHours] =
       await Promise.all([
         service.discountReport(user, storeId, pagedRange),
         service.purchaseReport(user, storeId, pagedRange),
         service.specialReceiptReport(user, storeId, range),
         service.customerReport(user, storeId, range),
+        service.peakHoursReport(user, storeId, range),
       ]);
 
     expect(discounts.data.totalAmount).toBe(65);
@@ -885,6 +921,18 @@ describe('PortalDashboardService report parity', () => {
         }),
       ]),
     );
+    expect(peakHours.data).toEqual({
+      items: [
+        {
+          hour: 10,
+          label: '10:00',
+          transactions: 2,
+          grossSales: 650,
+        },
+      ],
+      totalTransactions: 2,
+      totalGrossSales: 650,
+    });
   });
 
   it('shows confirmed restock purchases even when no supplier payment exists', async () => {
@@ -2035,6 +2083,7 @@ function createCashFlowFixture(path: string): void {
       ('financialReport', 1, 1, '2026-09-30T12:00:00Z'),
       ('loyaltyPoints', 0, 1, '2026-09-30T12:00:00Z'),
       ('purchases', 1, 1, '2026-09-30T12:00:00Z'),
+      ('peakHours', 1, 1, '2026-09-30T12:00:00Z'),
       ('specialReceipts', 1, 1, '2026-09-30T12:00:00Z'),
       ('summaryCsv', 1, 1, '2026-09-30T12:00:00Z');
 

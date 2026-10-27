@@ -174,6 +174,15 @@ export class PortalDashboardController {
     return this.dashboard.customerReport(user, storeId, query);
   }
 
+  @Get('stores/:storeId/reports/peak-hours')
+  peakHoursReport(
+    @CurrentPortalUser() user: AuthenticatedPortalUser,
+    @Param('storeId') storeId: string,
+    @Query() query: PortalDateRangeDto,
+  ) {
+    return this.dashboard.peakHoursReport(user, storeId, query);
+  }
+
   @Get('stores/:storeId/overview')
   overview(
     @CurrentPortalUser() user: AuthenticatedPortalUser,
