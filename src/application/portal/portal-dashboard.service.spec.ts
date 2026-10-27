@@ -1715,8 +1715,21 @@ describe('PortalDashboardService report parity', () => {
           storeId: 'store-legacy',
           title: 'Store excluded from combined totals',
         }),
+        expect.objectContaining({
+          type: 'OPERATIONS',
+          storeId,
+          title: 'Remittance shortage requires review',
+          amount: 25,
+        }),
+        expect.objectContaining({
+          type: 'OPERATIONS',
+          storeId,
+          title: 'Customers due for reorder',
+        }),
       ]),
     );
+    expect(response.data.stores[0]).not.toHaveProperty('advancedAlerts');
+    expect(() => JSON.stringify(response)).not.toThrow();
     expect(JSON.stringify(response.data.alerts)).not.toContain('Sensitive');
   });
 
@@ -2003,6 +2016,17 @@ function createCashFlowFixture(path: string): void {
       customer_id INTEGER PRIMARY KEY,
       group_id INTEGER
     );
+    CREATE TABLE remittance_reconciliations (
+      reconciliation_id INTEGER PRIMARY KEY,
+      shortage REAL,
+      status TEXT,
+      shift_date TEXT
+    );
+    CREATE TABLE customer_reorder_notifications (
+      notification_id INTEGER PRIMARY KEY,
+      status TEXT,
+      due_at TEXT
+    );
 
     INSERT INTO owner_feature_mods VALUES
       ('customerImport', 1, 1, '2026-09-30T12:00:00Z'),
@@ -2022,6 +2046,14 @@ function createCashFlowFixture(path: string): void {
       (2, '2026-09-10 10:00:00', 500, 50, 'COMPLETED', 450, 0, 0, 0),
       (3, '2026-09-11 10:00:00', 1000, 0, 'CANCELLED', 1000, 400, 0, 0),
       (4, '2026-09-18 10:00:00', 0, 0, 'COMPLETED', 200, 100, 0, 0);
+    INSERT INTO remittance_reconciliations
+      (reconciliation_id, shortage, status, shift_date)
+    VALUES
+      (1, 25, 'SHORTAGE', '2026-09-18 18:00:00');
+    INSERT INTO customer_reorder_notifications
+      (notification_id, status, due_at)
+    VALUES
+      (1, 'PENDING', '2026-09-20 08:00:00');
     UPDATE salestbl
        SET salesrefnum = 'SALE-2', salescust = 'Test Customer', salespaym = 'CASH',
            salescashier = 'Cashier One', salestotalitem = 2, salessub = 450,

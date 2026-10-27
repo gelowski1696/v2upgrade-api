@@ -1531,15 +1531,35 @@ export class PortalDashboardService {
               dates.to,
             ),
           ]);
-          const advancedAlerts = await db.$queryRawUnsafe<Array<{ kind: string; count: number; amount: number }>>(
-            `SELECT 'REMITTANCE' AS kind, COUNT(*) AS count, CAST(COALESCE(SUM(shortage), 0) AS REAL) AS amount
-               FROM remittance_reconciliations WHERE status = 'SHORTAGE' AND date(shift_date) BETWEEN date(?) AND date(?)
-             UNION ALL
-             SELECT 'REORDER' AS kind, COUNT(*) AS count, 0 AS amount
-               FROM customer_reorder_notifications WHERE status = 'PENDING' AND date(due_at) <= date(?)`,
-            dates.from, dates.to, dates.to,
-          ).catch(() => []);
-          return { metrics: rows[0], cashFlow, highDiscountSales, advancedAlerts };
+          const rawAdvancedAlerts = await db
+            .$queryRawUnsafe<
+              Array<{
+                kind: string;
+                count: number | bigint;
+                amount: number | bigint | null;
+              }>
+            >(
+              `SELECT 'REMITTANCE' AS kind, COUNT(*) AS count, CAST(COALESCE(SUM(shortage), 0) AS REAL) AS amount
+                 FROM remittance_reconciliations WHERE status = 'SHORTAGE' AND date(shift_date) BETWEEN date(?) AND date(?)
+               UNION ALL
+               SELECT 'REORDER' AS kind, COUNT(*) AS count, 0 AS amount
+                 FROM customer_reorder_notifications WHERE status = 'PENDING' AND date(due_at) <= date(?)`,
+              dates.from,
+              dates.to,
+              dates.to,
+            )
+            .catch(() => []);
+          const advancedAlerts = rawAdvancedAlerts.map((alert) => ({
+            kind: alert.kind,
+            count: Number(alert.count),
+            amount: this.amount(Number(alert.amount ?? 0)),
+          }));
+          return {
+            metrics: rows[0],
+            cashFlow,
+            highDiscountSales,
+            advancedAlerts,
+          };
         });
         const metrics = result.data.metrics;
         const snapshotDate = store.activeSnapshot!.snapshotCreatedAt;
@@ -1662,7 +1682,9 @@ export class PortalDashboardService {
           storeName: store.name,
           severity: remittance ? 'HIGH' : 'MEDIUM',
           type: 'OPERATIONS',
-          title: remittance ? 'Remittance shortage requires review' : 'Customers due for reorder',
+          title: remittance
+            ? 'Remittance shortage requires review'
+            : 'Customers due for reorder',
           detail: remittance
             ? `${alert.count} reconciliation record(s) show a combined shortage.`
             : `${alert.count} customer(s) have reached their reorder reminder window.`,
@@ -1731,7 +1753,13 @@ export class PortalDashboardService {
         includedStoreCount: storeRows.length,
         excludedStoreCount: stores.length - storeRows.length,
         summary,
-        stores: storeRows.map(({ highDiscountSales, ...store }) => store),
+        stores: storeRows.map((store) =>
+          Object.fromEntries(
+            Object.entries(store).filter(
+              ([key]) => key !== 'highDiscountSales' && key !== 'advancedAlerts',
+            ),
+          ),
+        ),
         alerts: visibleAlerts,
       },
     };
