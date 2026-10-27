@@ -175,7 +175,7 @@ export function validateEnvironment(config: Environment): Environment {
     ),
     STORE_SNAPSHOT_RETAIN_PREVIOUS: retainedPreviousSnapshots,
     STORE_SCHEMA_MIN_VERSION: numberValue(config.STORE_SCHEMA_MIN_VERSION, 27),
-    STORE_SCHEMA_MAX_VERSION: numberValue(config.STORE_SCHEMA_MAX_VERSION, 27),
+    STORE_SCHEMA_MAX_VERSION: numberValue(config.STORE_SCHEMA_MAX_VERSION, 32),
     STORE_CLIENT_CACHE_MAX: numberValue(config.STORE_CLIENT_CACHE_MAX, 25),
     STORE_CLIENT_IDLE_MILLISECONDS: numberValue(
       config.STORE_CLIENT_IDLE_MILLISECONDS,

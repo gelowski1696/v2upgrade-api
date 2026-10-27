@@ -47,7 +47,7 @@ export class DeviceSyncService implements OnModuleInit {
       512 * 1024 * 1024,
     );
     this.minimumSchema = config.get<number>('STORE_SCHEMA_MIN_VERSION', 27);
-    this.maximumSchema = config.get<number>('STORE_SCHEMA_MAX_VERSION', 27);
+    this.maximumSchema = config.get<number>('STORE_SCHEMA_MAX_VERSION', 32);
     this.retainedPreviousSnapshots = Math.max(
       0,
       Math.trunc(config.get<number>('STORE_SNAPSHOT_RETAIN_PREVIOUS', 2)),
