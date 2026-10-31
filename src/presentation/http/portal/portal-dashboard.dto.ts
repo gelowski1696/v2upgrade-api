@@ -65,6 +65,28 @@ export const PORTAL_ACTIVITY_ACTIONS = [
   'BACKUP',
 ] as const;
 
+export const PORTAL_EXPORT_REPORTS = [
+  'sales',
+  'customers',
+  'customer-sales-history',
+  'customer-lend-history',
+  'personnel',
+  'inventory',
+  'inventory-summary',
+  'inventory-forecast',
+  'profitability',
+  'customer-insights',
+  'transfers',
+  'customer-balances',
+  'cash-flow',
+  'financial-report',
+  'discount-report',
+  'purchase-report',
+  'special-receipts',
+  'customer-report',
+  'peak-hours',
+] as const;
+
 export class PortalDateRangeDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -198,6 +220,27 @@ export class PortalActivityQueryDto extends PortalDateRangeDto {
   @Min(1)
   @Max(100)
   pageSize = 25;
+}
+
+export class RecordPortalExportDto extends PortalDateRangeDto {
+  @ApiProperty({ enum: PORTAL_EXPORT_REPORTS })
+  @IsIn(PORTAL_EXPORT_REPORTS)
+  report!: (typeof PORTAL_EXPORT_REPORTS)[number];
+
+  @ApiProperty()
+  @IsString()
+  storeId!: string;
+
+  @ApiProperty({ enum: ['csv', 'pdf'] })
+  @IsIn(['csv', 'pdf'] as const)
+  format!: 'csv' | 'pdf';
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  rowCount?: number;
 }
 
 export class PortalInventoryForecastQueryDto extends PortalPageQueryDto {}

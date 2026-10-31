@@ -25,6 +25,7 @@ import {
   PortalReportQueryDto,
   PortalSalesTrendQueryDto,
   PortalSalesTargetQueryDto,
+  RecordPortalExportDto,
   SavePortalViewDto,
   UpdatePortalOverviewPreferencesDto,
   UpdatePortalSalesTargetDto,
@@ -48,6 +49,14 @@ export class PortalDashboardController {
     @Query() query: PortalActivityQueryDto,
   ) {
     return this.dashboard.activityLog(user, query);
+  }
+
+  @Post('activity/export')
+  recordExport(
+    @CurrentPortalUser() user: AuthenticatedPortalUser,
+    @Body() input: RecordPortalExportDto,
+  ) {
+    return this.dashboard.recordExportActivity(user, input);
   }
 
   @Get('preferences')

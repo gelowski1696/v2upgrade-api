@@ -75,6 +75,13 @@ interface PortalActivityQuery extends DateRange {
   pageSize: number;
 }
 
+interface PortalExportActivityInput extends DateRange {
+  storeId: string;
+  report: string;
+  format: 'csv' | 'pdf';
+  rowCount?: number;
+}
+
 type SalesTrendGrouping = 'day' | 'week' | 'month';
 
 interface SalesTrendQuery extends DateRange {
@@ -549,6 +556,7 @@ const PORTAL_ACTIVITY_ACTION_GROUPS: Record<PortalActivityAction, string[]> = {
   REPORTING: [
     'portal.report_schedule_enabled',
     'portal.report_schedule_disabled',
+    'portal.report_exported',
   ],
   BACKUP: [
     'backup.platform_passed',
@@ -688,12 +696,44 @@ export class PortalDashboardService {
           { value: 'SECURITY', label: 'Security and access' },
           { value: 'STORE_SYNC', label: 'Store synchronization' },
           { value: 'SETTINGS', label: 'Portal settings' },
-          { value: 'REPORTING', label: 'Scheduled reporting' },
+          { value: 'REPORTING', label: 'Reports, exports, and schedules' },
           { value: 'BACKUP', label: 'Backup and recovery' },
         ],
         stores,
       },
     };
+  }
+
+  async recordExportActivity(
+    user: AuthenticatedPortalUser,
+    input: PortalExportActivityInput,
+  ) {
+    this.authorize(user, input.storeId);
+    const range = this.requiredDateRange(input);
+    const store = await this.prisma.store.findFirst({
+      where: { id: input.storeId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!store) throw new NotFoundException('Store was not found.');
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'portal.report_exported',
+        resourceType: 'portal_report_export',
+        resourceId: input.storeId,
+        metadata: {
+          portalUserId: user.id,
+          storeId: input.storeId,
+          report: input.report,
+          format: input.format,
+          from: range.from,
+          to: range.to,
+          rowCount: input.rowCount ?? null,
+        },
+      },
+    });
+    return { recorded: true };
   }
 
   async preferences(user: AuthenticatedPortalUser) {
@@ -5193,6 +5233,14 @@ export class PortalDashboardService {
         ? 'Weekly'
         : 'Daily';
     const count = Math.max(0, Number(metadata.count ?? 0));
+    const report = this.safeActivityLabel(metadata.report, 'report').replace(
+      /[-_]+/g,
+      ' ',
+    );
+    const format = this.safeActivityLabel(metadata.format, 'file').toUpperCase();
+    const rowCount = Math.max(0, Number(metadata.rowCount ?? 0));
+    const rangeFrom = this.safeActivityLabel(metadata.from, 'the selected start date');
+    const rangeTo = this.safeActivityLabel(metadata.to, 'the selected end date');
     const schemaVersion = Number(metadata.schemaVersion ?? 0);
     const definitions: Record<
       string,
@@ -5347,6 +5395,13 @@ export class PortalDashboardService {
         status: 'INFO',
         title: `${frequency} report disabled`,
         detail: `${frequency} summary delivery was disabled for this store.`,
+        actor: 'You',
+      },
+      'portal.report_exported': {
+        category: 'REPORTING',
+        status: 'SUCCESS',
+        title: 'Report exported',
+        detail: `${report} was exported as ${format} for ${rangeFrom} to ${rangeTo}${rowCount ? ` with ${rowCount} ${rowCount === 1 ? 'row' : 'rows'}` : ''}.`,
         actor: 'You',
       },
       'backup.platform_passed': {
