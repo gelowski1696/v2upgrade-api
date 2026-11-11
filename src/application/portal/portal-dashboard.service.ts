@@ -364,6 +364,7 @@ interface CustomerPurchaseRow {
   id: number;
   saleDate: string;
   reference: string;
+  category: string;
   payment: string;
   status: string;
   itemCount: number;
@@ -2650,6 +2651,7 @@ export class PortalDashboardService {
           `SELECT CAST(salesid AS INTEGER) AS id,
                   COALESCE(salesdate, '') AS saleDate,
                   TRIM(COALESCE(salesrefnum, '')) AS reference,
+                  TRIM(COALESCE(salescat, '')) AS category,
                   TRIM(COALESCE(salespaym, '')) AS payment,
                   TRIM(COALESCE(salestatus, '')) AS status,
                   CAST(COALESCE(salestotalitem, 0) AS INTEGER) AS itemCount,
@@ -4256,6 +4258,7 @@ export class PortalDashboardService {
               customerName: string;
               saleDate: string;
               reference: string;
+              category: string;
               payment: string;
               status: string;
               itemCount: number;
@@ -4267,6 +4270,7 @@ export class PortalDashboardService {
                     TRIM(COALESCE(c.custname, '')) AS customerName,
                     COALESCE(s.salesdate, '') AS saleDate,
                     TRIM(COALESCE(s.salesrefnum, '')) AS reference,
+                    TRIM(COALESCE(s.salescat, '')) AS category,
                     TRIM(COALESCE(s.salespaym, '')) AS payment,
                     TRIM(COALESCE(s.salestatus, '')) AS status,
                     CAST(COALESCE(s.salestotalitem, 0) AS INTEGER) AS itemCount,
@@ -4301,6 +4305,7 @@ export class PortalDashboardService {
               'Items',
               'Total',
               'Balance',
+              'Category',
             ],
             rows: items.map((item) => [
               item.customerId,
@@ -4312,6 +4317,7 @@ export class PortalDashboardService {
               item.itemCount,
               item.totalAmount,
               item.balance,
+              this.saleCategoryLabel(item.category),
             ]),
           };
         }
@@ -4566,6 +4572,7 @@ export class PortalDashboardService {
               'Total',
               'Recorded cost',
               'Recorded gross profit',
+              'Category',
             ],
             rows: sales.map((sale) => [
               sale.saleDate,
@@ -4582,6 +4589,7 @@ export class PortalDashboardService {
               sale.totalAmount,
               sale.totalCost,
               this.amount(sale.totalAmount) - this.amount(sale.totalCost),
+              this.saleCategoryLabel(sale.category),
             ]),
           };
         }
@@ -6176,6 +6184,18 @@ export class PortalDashboardService {
     if (['=', '+', '-', '@'].includes(text.trimStart().charAt(0)))
       text = `'${text}`;
     return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  }
+
+  private saleCategoryLabel(value: string | null | undefined): string {
+    const category = String(value ?? '')
+      .trim()
+      .replace(/^\d+\s*-\s*/, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ');
+    const normalized = category.toUpperCase();
+    if (normalized === 'DELIVERY') return 'Delivery';
+    if (normalized === 'PICK UP' || normalized === 'PICKUP') return 'Pick up';
+    return category || 'Not recorded';
   }
 
   private fileSegment(value: string | null | undefined): string {

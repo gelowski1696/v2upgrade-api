@@ -1079,6 +1079,16 @@ describe('PortalDashboardService report parity', () => {
         expect(response.data.content).toContain('Non-refill price');
         expect(response.data.content).toContain('450,1200');
       }
+      if (report === 'sales') {
+        expect(response.data.content).toContain('Category');
+        expect(response.data.content).toContain('Delivery');
+        expect(response.data.content).toContain('Pick up');
+      }
+      if (report === 'customer-sales-history') {
+        expect(response.data.content).toContain('Category');
+        expect(response.data.content).toContain('Delivery');
+        expect(response.data.content).toContain('Pick up');
+      }
     }
   });
 
@@ -2115,7 +2125,7 @@ function createCashFlowFixture(path: string): void {
        SET salesrefnum = 'SALE-4',
            salescust = '=HYPERLINK("https://invalid.test")', salescustid = 1,
            salescashier = 'Cashier Two', salestatus = 'UNPAID', tenderbalance = 75,
-           salesdisc = 40, specialdisc = 10
+           salesdisc = 40, specialdisc = 10, salescat = '1-PICK UP'
      WHERE salesid = 4;
     INSERT INTO salescart VALUES
       (1, 'SALE-2', 'LPG-11', '11 kg refill', 'PC', 225, 450, 2, 0, 'SOLD', 0, 0,
