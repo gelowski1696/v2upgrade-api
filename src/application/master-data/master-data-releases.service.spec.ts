@@ -11,6 +11,7 @@ describe('MasterDataReleasesService', () => {
     masterDataRelease: {
       aggregate: jest.fn(),
       create: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     masterDataReleaseEntry: { createMany: jest.fn(), findMany: jest.fn() },
@@ -44,6 +45,14 @@ describe('MasterDataReleasesService', () => {
       version: 3,
       status: 'DRAFT',
     });
+    transaction.masterDataRelease.update.mockImplementation(
+      async (args: { data: Record<string, unknown> }) => ({
+        id: 'release-3',
+        clientId: 'client-1',
+        version: 3,
+        ...args.data,
+      }),
+    );
     transaction.masterDataReleaseEntry.createMany.mockResolvedValue({
       count: 1,
     });
@@ -136,5 +145,61 @@ describe('MasterDataReleasesService', () => {
         'admin-1',
       ),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('publishes a draft with a deterministic content hash and audit event', async () => {
+    transaction.masterDataRelease.findFirst.mockResolvedValue({
+      id: 'release-3',
+      clientId: 'client-1',
+      version: 3,
+      status: 'DRAFT',
+      entries: [
+        {
+          entityType: 'PRODUCT',
+          operation: 'UPSERT',
+          stableKey: 'PRODUCT-11KG',
+          payload: { name: 'LPG 11kg' },
+        },
+      ],
+    });
+
+    const result = await service.publish('client-1', 'release-3', 'admin-1');
+
+    expect(result.status).toBe('PUBLISHED');
+    expect(transaction.masterDataRelease.update.mock.calls[0]?.[0]).toEqual({
+      where: { id: 'release-3' },
+      data: expect.objectContaining({
+        status: 'PUBLISHED',
+        releaseHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+      include: { entries: true },
+    });
+    expect(transaction.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'master_data.release_published',
+      }),
+    });
+  });
+
+  it('rolls back only a published release and records the action', async () => {
+    transaction.masterDataRelease.findFirst.mockResolvedValue({
+      id: 'release-3',
+      clientId: 'client-1',
+      version: 3,
+      status: 'PUBLISHED',
+    });
+
+    const result = await service.rollback('client-1', 'release-3', 'admin-1');
+
+    expect(result.status).toBe('ROLLED_BACK');
+    expect(transaction.masterDataRelease.update.mock.calls[0]?.[0]).toEqual({
+      where: { id: 'release-3' },
+      data: expect.objectContaining({ status: 'ROLLED_BACK' }),
+    });
+    expect(transaction.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'master_data.release_rolled_back',
+      }),
+    });
   });
 });
