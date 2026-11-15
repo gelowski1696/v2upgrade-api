@@ -98,6 +98,26 @@ enum StoreStatus {
   ARCHIVED
 }
 
+enum MasterDataReleaseStatus {
+  DRAFT
+  PUBLISHED
+  ROLLED_BACK
+}
+
+enum MasterDataEntityType {
+  CATEGORY
+  BRAND
+  CYLINDER_SIZE
+  PRODUCT
+  SUPPLIER
+  PRICE
+}
+
+enum MasterDataChangeOperation {
+  UPSERT
+  DEACTIVATE
+}
+
 enum PortalRole {
   OWNER
   MANAGER
@@ -272,6 +292,7 @@ model User {
   expensesCreated      Expense[]                  @relation("ExpenseCreatedBy")
   billingStatements    BillingStatementDelivery[] @relation("BillingStatementCreatedBy")
   auditLogs            AuditLog[]
+  masterDataReleases   MasterDataRelease[] @relation("MasterDataReleaseCreatedBy")
 
   @@map("users")
 }
@@ -321,6 +342,7 @@ model Client {
   paymentRecords      PaymentRecord[]
   billingStatements   BillingStatementDelivery[]
   socialConnections   SocialConnection[]
+  masterDataReleases MasterDataRelease[]
 
   @@index([businessName])
   @@index([status])
@@ -344,6 +366,42 @@ model ClientGroup {
 
   @@index([status, name])
   @@map("client_groups")
+}
+
+model MasterDataRelease {
+  id           String                   @id @default(uuid()) @db.Uuid
+  clientId     String                   @map("client_id") @db.Uuid
+  version      Int
+  status       MasterDataReleaseStatus  @default(DRAFT)
+  releaseHash  String?                  @map("release_hash") @db.Char(64)
+  notes        String?
+  createdById  String                   @map("created_by_id") @db.Uuid
+  publishedAt  DateTime?                @map("published_at") @db.Timestamptz(3)
+  rolledBackAt DateTime?                @map("rolled_back_at") @db.Timestamptz(3)
+  createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  client       Client                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdBy    User                     @relation("MasterDataReleaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  entries      MasterDataReleaseEntry[]
+
+  @@unique([clientId, version])
+  @@index([clientId, status, version])
+  @@map("master_data_releases")
+}
+
+model MasterDataReleaseEntry {
+  id          String                    @id @default(uuid()) @db.Uuid
+  releaseId   String                    @map("release_id") @db.Uuid
+  entityType  MasterDataEntityType      @map("entity_type")
+  operation   MasterDataChangeOperation
+  stableKey   String                    @map("stable_key") @db.VarChar(180)
+  payload     Json
+  createdAt   DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  release     MasterDataRelease         @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, entityType, stableKey])
+  @@index([releaseId, entityType])
+  @@map("master_data_release_entries")
 }
 
 model Store {

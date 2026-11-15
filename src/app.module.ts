@@ -14,6 +14,7 @@ import { PortalModule } from './modules/portal.module.js';
 import { AnalyticsModule } from './modules/analytics.module.js';
 import { FinanceModule } from './modules/finance.module.js';
 import { SocialModule } from './modules/social.module.js';
+import { MasterDataModule } from './modules/master-data.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { SocialModule } from './modules/social.module.js';
     AnalyticsModule,
     FinanceModule,
     SocialModule,
+    MasterDataModule,
   ],
 })
 export class AppModule {}
