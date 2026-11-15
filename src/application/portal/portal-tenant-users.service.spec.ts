@@ -86,6 +86,13 @@ describe('PortalTenantUsersService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('does not expose the tenant user directory to viewers', async () => {
+    await expect(
+      service.list({ ...owner, role: 'VIEWER' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.portalUser.findMany).not.toHaveBeenCalled();
+  });
+
   it('rejects a store assignment outside the tenant', async () => {
     prisma.store.findMany.mockResolvedValue([
       { id: 'store-main', clientId: 'client-1', status: 'ACTIVE' },

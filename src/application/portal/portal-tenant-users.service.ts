@@ -22,6 +22,11 @@ export class PortalTenantUsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(user: AuthenticatedPortalUser) {
+    if (user.role !== 'OWNER') {
+      throw new ForbiddenException(
+        'Only the tenant owner can manage web users.',
+      );
+    }
     return this.prisma.portalUser.findMany({
       where: { clientId: user.clientId },
       select: {
