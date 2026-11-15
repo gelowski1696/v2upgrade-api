@@ -74,20 +74,21 @@ export class PortalJwtStrategy extends PassportStrategy(
       where: { storeId: { in: storeIds }, status: 'ACTIVE' },
       select: {
         storeId: true,
-        subscription: { select: { entitlements: true } },
+        subscription: { select: { status: true, entitlements: true } },
       },
     });
-    const disabledStores = new Set(
+    const subscribedStores = new Set(
       devices
         .filter(
           (device) =>
             device.subscription &&
-            !webDashboardEnabled(device.subscription.entitlements),
+            ['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status) &&
+            webDashboardEnabled(device.subscription.entitlements),
         )
         .map((device) => device.storeId),
     );
-    const enabledStoreIds = storeIds.filter(
-      (storeId) => !disabledStores.has(storeId),
+    const enabledStoreIds = storeIds.filter((storeId) =>
+      subscribedStores.has(storeId),
     );
     if (!enabledStoreIds.length) {
       throw new UnauthorizedException('Web dashboard access is not enabled.');

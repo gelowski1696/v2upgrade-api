@@ -58,7 +58,22 @@ describe('PortalService refresh-token families', () => {
       }
       return Promise.all(input as Promise<unknown>[]);
     });
-    prisma.device.findMany.mockResolvedValue([]);
+    prisma.device.findMany.mockResolvedValue([
+      {
+        storeId: 'store-one',
+        subscription: {
+          status: 'ACTIVE',
+          entitlements: { webDashboard: true },
+        },
+      },
+      {
+        storeId: 'store-two',
+        subscription: {
+          status: 'ACTIVE',
+          entitlements: { webDashboard: true },
+        },
+      },
+    ]);
     prisma.store.findMany.mockResolvedValue([
       { id: 'store-one' },
       { id: 'store-two' },
@@ -96,6 +111,61 @@ describe('PortalService refresh-token families', () => {
     expect(created.tokenFamilyId).toBe(created.id);
     expect(result.refreshToken.split('.')[0]).toBe(created.id);
     expect(result.refreshToken.split('.')[1]).toEqual(expect.any(String));
+  });
+
+  it('rejects login when every authorized store has a suspended subscription', async () => {
+    prisma.portalUser.findUnique.mockResolvedValue(portalUser());
+    prisma.portalUser.update.mockResolvedValue({});
+    prisma.device.findMany.mockResolvedValue([
+      {
+        storeId: 'store-one',
+        subscription: {
+          status: 'SUSPENDED',
+          entitlements: { webDashboard: true },
+        },
+      },
+    ]);
+
+    await expect(
+      service.login('owner@example.test', 'valid-password', requestContext()),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(prisma.portalRefreshSession.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps only subscribed stores when group access includes a suspended subscription', async () => {
+    prisma.portalUser.findUnique.mockResolvedValue({
+      ...portalUser(),
+      storeAccess: [{ storeId: 'store-one' }, { storeId: 'store-two' }],
+    });
+    prisma.portalUser.update.mockResolvedValue({});
+    prisma.portalRefreshSession.create.mockImplementation(
+      ({ data }: { data: { id: string } }) => ({ id: data.id }),
+    );
+    prisma.device.findMany.mockResolvedValue([
+      {
+        storeId: 'store-one',
+        subscription: {
+          status: 'SUSPENDED',
+          entitlements: { webDashboard: true },
+        },
+      },
+      {
+        storeId: 'store-two',
+        subscription: {
+          status: 'ACTIVE',
+          entitlements: { webDashboard: true },
+        },
+      },
+    ]);
+
+    const result = await service.login(
+      'owner@example.test',
+      'valid-password',
+      requestContext(),
+    );
+
+    expect(result.user.storeIds).toEqual(['store-two']);
   });
 
   it('activates one invitation with access to every reviewed store', async () => {
@@ -161,6 +231,25 @@ describe('PortalService refresh-token families', () => {
     });
     expect(result.refreshToken.split('.')[0]).toBe(replacement.id);
     expect(result.refreshToken.split('.')[1]).toEqual(expect.any(String));
+  });
+
+  it('rejects refresh when every authorized store has a suspended subscription', async () => {
+    prisma.portalRefreshSession.findUnique.mockResolvedValue(refreshSession());
+    prisma.device.findMany.mockResolvedValue([
+      {
+        storeId: 'store-one',
+        subscription: {
+          status: 'SUSPENDED',
+          entitlements: { webDashboard: true },
+        },
+      },
+    ]);
+
+    await expect(
+      service.refresh('session-old.valid-secret', requestContext()),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(transaction.portalRefreshSession.create).not.toHaveBeenCalled();
   });
 
   it('revokes the active family and audits reuse of a rotated token', async () => {

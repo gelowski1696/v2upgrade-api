@@ -838,22 +838,23 @@ export class PortalService {
         where: { storeId: { in: storeIds }, status: 'ACTIVE' },
         select: {
           storeId: true,
-          subscription: { select: { entitlements: true } },
+          subscription: { select: { status: true, entitlements: true } },
         },
       }),
     ]);
     const activeStores = new Set(stores.map((store) => store.id));
-    const disabledStores = new Set(
+    const subscribedStores = new Set(
       devices
         .filter(
           (device) =>
             device.subscription &&
-            !webDashboardEnabled(device.subscription.entitlements),
+            ['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status) &&
+            webDashboardEnabled(device.subscription.entitlements),
         )
         .map((device) => device.storeId),
     );
     return storeIds.filter(
-      (storeId) => activeStores.has(storeId) && !disabledStores.has(storeId),
+      (storeId) => activeStores.has(storeId) && subscribedStores.has(storeId),
     );
   }
 
