@@ -7,5 +7,6 @@ import { AuthModule } from './auth.module.js';
   imports: [AuthModule],
   controllers: [MasterDataReleasesController],
   providers: [MasterDataReleasesService],
+  exports: [MasterDataReleasesService],
 })
 export class MasterDataModule {}

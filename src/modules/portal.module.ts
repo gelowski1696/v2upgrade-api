@@ -7,6 +7,7 @@ import { PortalDashboardService } from '../application/portal/portal-dashboard.s
 import { PortalScheduledReportsService } from '../application/portal/portal-scheduled-reports.service.js';
 import { PortalTenantManagementService } from '../application/portal/portal-tenant-management.service.js';
 import { PortalTenantUsersService } from '../application/portal/portal-tenant-users.service.js';
+import { PortalMasterDataReleasesService } from '../application/portal/portal-master-data-releases.service.js';
 import { Argon2PasswordHasher } from '../infrastructure/auth/argon2-password-hasher.js';
 import { PortalJwtStrategy } from '../infrastructure/auth/portal-jwt.strategy.js';
 import { DevicePortalController } from '../presentation/http/portal/device-portal.controller.js';
@@ -18,10 +19,12 @@ import { ResendWebhookController } from '../presentation/http/webhooks/resend-we
 import { AdminPortalAccessController } from '../presentation/http/portal/admin-portal-access.controller.js';
 import { PortalTenantManagementController } from '../presentation/http/portal/portal-tenant-management.controller.js';
 import { PortalTenantUsersController } from '../presentation/http/portal/portal-tenant-users.controller.js';
+import { PortalMasterDataReleasesController } from '../presentation/http/portal/portal-master-data-releases.controller.js';
 import { PortalMailerService } from '../infrastructure/email/portal-mailer.service.js';
 import { DeviceSyncModule } from './device-sync.module.js';
 import { StoreDatabaseModule } from './store-database.module.js';
 import { AuthModule } from './auth.module.js';
+import { MasterDataModule } from './master-data.module.js';
 
 @Module({
   imports: [
@@ -30,6 +33,7 @@ import { AuthModule } from './auth.module.js';
     DeviceSyncModule,
     StoreDatabaseModule,
     AuthModule,
+    MasterDataModule,
   ],
   controllers: [
     PortalAuthController,
@@ -40,6 +44,7 @@ import { AuthModule } from './auth.module.js';
     AdminPortalAccessController,
     PortalTenantManagementController,
     PortalTenantUsersController,
+    PortalMasterDataReleasesController,
   ],
   providers: [
     PortalService,
@@ -52,6 +57,7 @@ import { AuthModule } from './auth.module.js';
     AdminPortalAccessService,
     PortalTenantManagementService,
     PortalTenantUsersService,
+    PortalMasterDataReleasesService,
   ],
   exports: [PortalAuthGuard],
 })

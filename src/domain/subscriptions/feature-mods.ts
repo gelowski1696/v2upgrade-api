@@ -77,3 +77,14 @@ export function webDashboardEnabled(entitlements: unknown): boolean {
   }
   return (entitlements as Record<string, unknown>)['webDashboard'] !== false;
 }
+
+export function cloudMasterDataEnabled(entitlements: unknown): boolean {
+  if (
+    !entitlements ||
+    typeof entitlements !== 'object' ||
+    Array.isArray(entitlements)
+  ) {
+    return true;
+  }
+  return (entitlements as Record<string, unknown>)['cloudMasterData'] !== false;
+}
