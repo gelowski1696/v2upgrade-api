@@ -86,6 +86,7 @@ export class PrismaPlanRepository implements PlanRepository {
             trialDays: input.trialDays ?? 0,
             graceDays: input.graceDays ?? 7,
             maxDevices: input.maxDevices ?? 1,
+            maxStores: input.maxStores ?? 1,
             features: (input.features ?? {}) as Prisma.InputJsonValue,
           },
         },
@@ -114,6 +115,7 @@ export class PrismaPlanRepository implements PlanRepository {
           trialDays: input.trialDays ?? 0,
           graceDays: input.graceDays ?? 7,
           maxDevices: input.maxDevices ?? 1,
+          maxStores: input.maxStores ?? 1,
           features: (input.features ?? {}) as Prisma.InputJsonValue,
         },
       });

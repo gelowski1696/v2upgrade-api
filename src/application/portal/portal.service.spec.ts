@@ -75,8 +75,8 @@ describe('PortalService refresh-token families', () => {
       },
     ]);
     prisma.store.findMany.mockResolvedValue([
-      { id: 'store-one' },
-      { id: 'store-two' },
+      dashboardStore('store-one'),
+      dashboardStore('store-two'),
     ]);
     prisma.auditLog.create.mockResolvedValue({});
     transaction.auditLog.create.mockResolvedValue({});
@@ -116,14 +116,8 @@ describe('PortalService refresh-token families', () => {
   it('rejects login when every authorized store has a suspended subscription', async () => {
     prisma.portalUser.findUnique.mockResolvedValue(portalUser());
     prisma.portalUser.update.mockResolvedValue({});
-    prisma.device.findMany.mockResolvedValue([
-      {
-        storeId: 'store-one',
-        subscription: {
-          status: 'SUSPENDED',
-          entitlements: { webDashboard: true },
-        },
-      },
+    prisma.store.findMany.mockResolvedValue([
+      dashboardStore('store-one', 'SUSPENDED'),
     ]);
 
     await expect(
@@ -142,21 +136,9 @@ describe('PortalService refresh-token families', () => {
     prisma.portalRefreshSession.create.mockImplementation(
       ({ data }: { data: { id: string } }) => ({ id: data.id }),
     );
-    prisma.device.findMany.mockResolvedValue([
-      {
-        storeId: 'store-one',
-        subscription: {
-          status: 'SUSPENDED',
-          entitlements: { webDashboard: true },
-        },
-      },
-      {
-        storeId: 'store-two',
-        subscription: {
-          status: 'ACTIVE',
-          entitlements: { webDashboard: true },
-        },
-      },
+    prisma.store.findMany.mockResolvedValue([
+      dashboardStore('store-one', 'SUSPENDED'),
+      dashboardStore('store-two'),
     ]);
 
     const result = await service.login(
@@ -206,6 +188,49 @@ describe('PortalService refresh-token families', () => {
     expect(result.user.storeIds).toEqual(['store-one', 'store-two']);
   });
 
+  it('activates a cloud-first owner before a POS device is enrolled', async () => {
+    prisma.portalInvitation.findUnique.mockResolvedValue({
+      id: 'invitation-one',
+      clientId: 'client-one',
+      storeId: 'store-one',
+      storeIds: ['store-one'],
+      username: 'owner@example.test',
+      displayName: 'Owner',
+      role: 'OWNER',
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    prisma.store.findMany.mockResolvedValue([
+      {
+        id: 'store-one',
+        client: {
+          subscriptions: [
+            {
+              status: 'ACTIVE',
+              entitlements: { webDashboard: true },
+            },
+          ],
+        },
+      },
+    ]);
+    transaction.portalUser.create.mockResolvedValue({
+      ...portalUser(),
+      storeAccess: [{ storeId: 'store-one' }],
+    });
+    prisma.portalRefreshSession.create.mockImplementation(
+      ({ data }: { data: { id: string } }) => ({ id: data.id }),
+    );
+
+    const result = await service.activate(
+      'cloud-first-token',
+      'valid-password',
+      requestContext(),
+    );
+
+    expect(result.user.storeIds).toEqual(['store-one']);
+  });
+
   it('atomically rotates a refresh token within the same family', async () => {
     prisma.portalRefreshSession.findUnique.mockResolvedValue(refreshSession());
     transaction.portalRefreshSession.updateMany.mockResolvedValue({ count: 1 });
@@ -235,14 +260,8 @@ describe('PortalService refresh-token families', () => {
 
   it('rejects refresh when every authorized store has a suspended subscription', async () => {
     prisma.portalRefreshSession.findUnique.mockResolvedValue(refreshSession());
-    prisma.device.findMany.mockResolvedValue([
-      {
-        storeId: 'store-one',
-        subscription: {
-          status: 'SUSPENDED',
-          entitlements: { webDashboard: true },
-        },
-      },
+    prisma.store.findMany.mockResolvedValue([
+      dashboardStore('store-one', 'SUSPENDED'),
     ]);
 
     await expect(
@@ -334,6 +353,20 @@ function portalUser() {
     role: 'OWNER',
     status: 'ACTIVE',
     storeAccess: [{ storeId: 'store-one' }],
+  };
+}
+
+function dashboardStore(id: string, status = 'ACTIVE') {
+  return {
+    id,
+    client: {
+      subscriptions: [
+        {
+          status,
+          entitlements: { webDashboard: true },
+        },
+      ],
+    },
   };
 }
 

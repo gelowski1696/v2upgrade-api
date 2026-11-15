@@ -35,6 +35,7 @@ describe('SubscriptionsService', () => {
     findByDeviceId: jest.fn(),
     touchDevice: jest.fn(),
     assignDevice: jest.fn(),
+    enrollDevice: jest.fn(),
     create: jest.fn(),
     groupCreationOptions: jest.fn(),
     createGroup: jest.fn(),
@@ -154,7 +155,7 @@ describe('SubscriptionsService', () => {
       expect.objectContaining({
         amount: '1499.00',
         currency: 'PHP',
-        maxDevices: 1,
+        maxDevices: 2,
         deviceInstallationId: 'POS-DEVICE-0001',
         entitlements: { reports: true, summaryCsv: true, webDashboard: false },
         expiresAt: new Date('2026-02-15T00:00:00.000Z'),
@@ -162,6 +163,95 @@ describe('SubscriptionsService', () => {
     );
     expect(audit.record.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ action: 'subscription.created' }),
+    );
+  });
+
+  it('creates a cloud-first subscription without assigning a device', async () => {
+    clients.findById.mockResolvedValue({
+      id: 'client-id',
+      code: 'CLIENT-1',
+      businessName: 'Client One',
+      ownerName: null,
+      email: null,
+      phone: null,
+      address: null,
+      notes: null,
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    plans.findVersion.mockResolvedValue({
+      id: 'version-id',
+      planId: 'plan-id',
+      version: 1,
+      billingInterval: 'MONTHLY',
+      amount: '1499.00',
+      currency: 'PHP',
+      trialDays: 0,
+      graceDays: 7,
+      maxDevices: 2,
+      features: { reports: true, webDashboard: true },
+      publishedAt: new Date(),
+      createdAt: new Date(),
+    });
+    plans.findById.mockResolvedValue({
+      id: 'plan-id',
+      code: 'STANDARD',
+      name: 'Standard',
+      status: 'ACTIVE',
+      versions: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    subscriptions.create.mockResolvedValue({
+      id: 'subscription-id',
+      clientId: 'client-id',
+      planVersionId: 'version-id',
+      status: 'DRAFT',
+      startsAt: new Date('2026-01-15T00:00:00.000Z'),
+      renewsAt: new Date('2026-02-15T00:00:00.000Z'),
+      expiresAt: new Date('2026-02-15T00:00:00.000Z'),
+      graceEndsAt: null,
+      suspendedAt: null,
+      cancelledAt: null,
+      amount: '1499.00',
+      currency: 'PHP',
+      billingInterval: 'MONTHLY',
+      maxDevices: 2,
+      entitlements: { reports: true, webDashboard: true },
+      notes: null,
+      createdById: 'actor-id',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      client: {
+        id: 'client-id',
+        code: 'CLIENT-1',
+        businessName: 'Client One',
+      },
+      planVersion: {
+        id: 'version-id',
+        version: 1,
+        features: { reports: true, webDashboard: true },
+        plan: { id: 'plan-id', code: 'STANDARD', name: 'Standard' },
+      },
+      device: null,
+    });
+
+    await service.create(
+      {
+        clientId: 'client-id',
+        planVersionId: 'version-id',
+        startsAt: '2026-01-15T00:00:00.000Z',
+      },
+      'actor-id',
+    );
+
+    expect(subscriptions.findByDeviceId.mock.calls).toHaveLength(0);
+    expect(subscriptions.create.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        clientId: 'client-id',
+        deviceInstallationId: undefined,
+      }),
     );
   });
 
@@ -179,6 +269,34 @@ describe('SubscriptionsService', () => {
     ).rejects.toBeInstanceOf(InvalidOperationError);
 
     expect(subscriptions.create.mock.calls).toHaveLength(0);
+  });
+
+  it('enrolls an additional device through the subscription quota boundary', async () => {
+    const subscription = subscriptionRecord();
+    subscriptions.findById.mockResolvedValue(subscription);
+    subscriptions.findByDeviceId.mockResolvedValue(null);
+    subscriptions.enrollDevice.mockResolvedValue(subscription);
+
+    await service.enrollDevice(
+      subscription.id,
+      {
+        deviceId: 'pos-device-0002',
+        storeId: '4c67dfe1-9c14-4aed-b1f5-2fca56e74f60',
+        label: 'Back-office PC',
+      },
+      'actor-id',
+    );
+
+    expect(subscriptions.enrollDevice.mock.calls[0]?.[0]).toEqual({
+      subscriptionId: subscription.id,
+      clientId: subscription.clientId,
+      storeId: '4c67dfe1-9c14-4aed-b1f5-2fca56e74f60',
+      deviceInstallationId: 'POS-DEVICE-0002',
+      label: 'Back-office PC',
+    });
+    expect(audit.record.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ action: 'subscription.device_enrolled' }),
+    );
   });
 
   it('creates one draft subscription for each selected group member', async () => {

@@ -298,6 +298,10 @@ export class AdminPortalAccessService {
             group: {
               select: { code: true, name: true },
             },
+            subscriptions: {
+              where: { deletedAt: null },
+              select: { status: true, entitlements: true },
+            },
           },
         },
         activeSnapshot: {
@@ -348,14 +352,10 @@ export class AdminPortalAccessService {
     if (store.client.status !== 'ACTIVE') {
       return { eligible: false, reason: 'client inactive' };
     }
-    if (!store.devices.length) {
-      return { eligible: false, reason: 'no active registered device' };
-    }
-    const dashboardEnabled = store.devices.some(
-      (device) =>
-        device.subscription &&
-        ['TRIAL', 'ACTIVE', 'GRACE'].includes(device.subscription.status) &&
-        webDashboardEnabled(device.subscription.entitlements),
+    const dashboardEnabled = store.client.subscriptions.some(
+      (subscription) =>
+        ['TRIAL', 'ACTIVE', 'GRACE'].includes(subscription.status) &&
+        webDashboardEnabled(subscription.entitlements),
     );
     if (!dashboardEnabled) {
       return { eligible: false, reason: 'dashboard entitlement unavailable' };

@@ -652,6 +652,7 @@ model PlanVersion {
   trialDays       Int             @default(0) @map("trial_days")
   graceDays       Int             @default(7) @map("grace_days")
   maxDevices      Int             @default(1) @map("max_devices")
+  maxStores       Int             @default(1) @map("max_stores")
   features        Json            @default("{}")
   publishedAt     DateTime?       @map("published_at") @db.Timestamptz(3)
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -680,6 +681,7 @@ model Subscription {
   currency        String                @db.Char(3)
   billingInterval BillingInterval       @map("billing_interval")
   maxDevices      Int                   @map("max_devices")
+  maxStores       Int                   @default(1) @map("max_stores")
   entitlements    Json                  @default("{}")
   notes           String?
   createdById     String                @map("created_by_id") @db.Uuid
@@ -763,7 +765,7 @@ model Device {
   socialOauthAttempts  SocialOauthAttempt[]
   socialPresence       SocialCashierPresence[]
 
-  @@unique([subscriptionId])
+  @@index([subscriptionId])
   @@index([clientId, status])
   @@index([subscriptionId, status])
   @@index([storeId, status])

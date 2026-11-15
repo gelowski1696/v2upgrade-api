@@ -51,7 +51,12 @@ export class CreateSubscriptionDto {
   @IsUUID()
   planVersionId!: string;
 
-  @ApiProperty({ example: 'POS-7F73A16C-1E56-4F29-93C9-77A25C061552' })
+  @ApiPropertyOptional({
+    example: 'POS-7F73A16C-1E56-4F29-93C9-77A25C061552',
+    description:
+      'Optional during cloud-first onboarding. A Windows POS device can be assigned later.',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
@@ -59,7 +64,7 @@ export class CreateSubscriptionDto {
     message:
       'deviceId must be 8-120 letters, numbers, dots, underscores, colons, or dashes',
   })
-  deviceId!: string;
+  deviceId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -155,6 +160,22 @@ export class ValidateDeviceDto {
   @MaxLength(120)
   @Matches(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,119}$/)
   deviceId!: string;
+}
+
+export class EnrollDeviceDto extends ValidateDeviceDto {
+  @ApiPropertyOptional({
+    description:
+      'Target store UUID. Defaults to the first active tenant store.',
+  })
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+
+  @ApiPropertyOptional({ example: 'Back-office PC' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  label?: string;
 }
 
 export class UpdateFeatureModsDto {

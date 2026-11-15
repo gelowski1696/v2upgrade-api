@@ -5,6 +5,7 @@ import type {
   CreateSubscriptionInput,
   CreateGroupSubscriptionsInput,
   DeviceLicenseRecord,
+  EnrollSubscriptionDeviceInput,
   GroupSubscriptionOptions,
   SubscriptionEventRecord,
   SubscriptionRecord,
@@ -178,27 +179,86 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     return (await this.findById(subscriptionId)) as SubscriptionRecord;
   }
 
+  async enrollDevice(
+    input: EnrollSubscriptionDeviceInput,
+  ): Promise<SubscriptionRecord> {
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.$queryRaw`
+          SELECT "id"
+          FROM "subscriptions"
+          WHERE "id" = ${input.subscriptionId}::uuid
+          FOR UPDATE
+        `;
+        const subscription = await transaction.subscription.findFirstOrThrow({
+          where: {
+            id: input.subscriptionId,
+            clientId: input.clientId,
+            deletedAt: null,
+          },
+          select: { maxDevices: true },
+        });
+        const activeDeviceCount = await transaction.device.count({
+          where: { subscriptionId: input.subscriptionId, status: 'ACTIVE' },
+        });
+        if (activeDeviceCount >= subscription.maxDevices) {
+          throw new ConflictError(
+            `This subscription allows ${subscription.maxDevices} active device${subscription.maxDevices === 1 ? '' : 's'}.`,
+            'DEVICE_LIMIT_REACHED',
+          );
+        }
+        const store = await transaction.store.findFirstOrThrow({
+          where: {
+            ...(input.storeId ? { id: input.storeId } : {}),
+            clientId: input.clientId,
+            status: 'ACTIVE',
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        await transaction.device.create({
+          data: {
+            subscriptionId: input.subscriptionId,
+            clientId: input.clientId,
+            storeId: store.id,
+            installationId: input.deviceInstallationId,
+            label: input.label ?? 'Windows POS',
+            platform: 'windows',
+          },
+        });
+      });
+    } catch (error) {
+      this.rethrowDeviceConflict(error);
+    }
+    return (await this.findById(input.subscriptionId)) as SubscriptionRecord;
+  }
+
   async create(input: CreateSubscriptionInput): Promise<SubscriptionRecord> {
     const { deviceInstallationId, ...subscriptionInput } = input;
     try {
-      const store = await this.prisma.store.findFirstOrThrow({
-        where: { clientId: input.clientId, status: 'ACTIVE' },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true },
-      });
+      const store = deviceInstallationId
+        ? await this.prisma.store.findFirstOrThrow({
+            where: { clientId: input.clientId, status: 'ACTIVE' },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          })
+        : null;
       const subscription = await this.prisma.subscription.create({
         data: {
           ...subscriptionInput,
           entitlements: input.entitlements as Prisma.InputJsonValue,
-          devices: {
-            create: {
-              clientId: input.clientId,
-              storeId: store.id,
-              installationId: deviceInstallationId,
-              label: 'Primary POS',
-              platform: 'windows',
-            },
-          },
+          devices:
+            deviceInstallationId && store
+              ? {
+                  create: {
+                    clientId: input.clientId,
+                    storeId: store.id,
+                    installationId: deviceInstallationId,
+                    label: 'Primary POS',
+                    platform: 'windows',
+                  },
+                }
+              : undefined,
           events: {
             create: {
               toStatus: 'DRAFT',

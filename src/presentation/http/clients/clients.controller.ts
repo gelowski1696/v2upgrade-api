@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -11,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ClientsService } from '../../../application/clients/clients.service.js';
 import { ClientGroupsService } from '../../../application/clients/client-groups.service.js';
+import { ClientStoresService } from '../../../application/clients/client-stores.service.js';
 import type { AuthenticatedUser } from '../../../domain/auth/auth.types.js';
 import { CurrentUser } from '../auth/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
@@ -23,6 +25,10 @@ import {
   AssignClientGroupDto,
   BulkAssignClientGroupDto,
 } from './clients.dto.js';
+import {
+  CreateClientStoreDto,
+  UpdateClientStoreDto,
+} from './client-stores.dto.js';
 
 @ApiTags('Clients')
 @ApiBearerAuth()
@@ -32,11 +38,38 @@ export class ClientsController {
   constructor(
     private readonly clients: ClientsService,
     private readonly groups: ClientGroupsService,
+    private readonly stores: ClientStoresService,
   ) {}
 
   @Get()
   list(@Query() query: ClientPageQueryDto) {
     return this.clients.list(query);
+  }
+
+  @Get(':id/stores')
+  storesForClient(@Param('id', ParseUUIDPipe) id: string) {
+    return this.stores.list(id);
+  }
+
+  @Post(':id/stores')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
+  createStore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() input: CreateClientStoreDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stores.create(id, input, user.id);
+  }
+
+  @Patch(':id/stores/:storeId')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
+  updateStore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('storeId', ParseUUIDPipe) storeId: string,
+    @Body() input: UpdateClientStoreDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.stores.update(id, storeId, input, user.id);
   }
 
   @Get(':id')

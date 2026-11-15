@@ -825,37 +825,36 @@ export class PortalService {
     storeIds: string[],
   ): Promise<string[]> {
     if (!storeIds.length) return [];
-    const [stores, devices] = await Promise.all([
-      this.prisma.store.findMany({
-        where: {
-          id: { in: storeIds },
-          status: 'ACTIVE',
-          client: { status: 'ACTIVE' },
+    const stores = await this.prisma.store.findMany({
+      where: {
+        id: { in: storeIds },
+        status: 'ACTIVE',
+        client: { status: 'ACTIVE' },
+      },
+      select: {
+        id: true,
+        client: {
+          select: {
+            subscriptions: {
+              where: { deletedAt: null },
+              select: { status: true, entitlements: true },
+            },
+          },
         },
-        select: { id: true },
-      }),
-      this.prisma.device.findMany({
-        where: { storeId: { in: storeIds }, status: 'ACTIVE' },
-        select: {
-          storeId: true,
-          subscription: { select: { status: true, entitlements: true } },
-        },
-      }),
-    ]);
-    const activeStores = new Set(stores.map((store) => store.id));
-    const subscribedStores = new Set(
-      devices
-        .filter(
-          (device) =>
-            device.subscription &&
-            ['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status) &&
-            webDashboardEnabled(device.subscription.entitlements),
+      },
+    });
+    const enabledStores = new Set(
+      stores
+        .filter((store) =>
+          store.client.subscriptions.some(
+            (subscription) =>
+              ['ACTIVE', 'TRIAL', 'GRACE'].includes(subscription.status) &&
+              webDashboardEnabled(subscription.entitlements),
+          ),
         )
-        .map((device) => device.storeId),
+        .map((store) => store.id),
     );
-    return storeIds.filter(
-      (storeId) => activeStores.has(storeId) && subscribedStores.has(storeId),
-    );
+    return storeIds.filter((storeId) => enabledStores.has(storeId));
   }
 
   private describeUserAgent(userAgent: string | null): string {

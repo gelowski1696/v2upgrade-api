@@ -25,6 +25,7 @@ export interface SubscriptionRecord {
   currency: string;
   billingInterval: BillingInterval;
   maxDevices: number;
+  maxStores: number;
   entitlements: Record<string, unknown>;
   notes: string | null;
   createdById: string;
@@ -96,10 +97,19 @@ export interface CreateSubscriptionInput {
   currency: string;
   billingInterval: BillingInterval;
   maxDevices: number;
+  maxStores: number;
   entitlements: Record<string, unknown>;
   notes?: string;
   createdById: string;
+  deviceInstallationId?: string;
+}
+
+export interface EnrollSubscriptionDeviceInput {
+  subscriptionId: string;
+  clientId: string;
+  storeId?: string;
   deviceInstallationId: string;
+  label?: string;
 }
 
 export interface GroupSubscriptionMemberOption {
@@ -157,6 +167,9 @@ export interface SubscriptionRepository {
     subscriptionId: string,
     clientId: string,
     deviceInstallationId: string,
+  ): Promise<SubscriptionRecord>;
+  enrollDevice(
+    input: EnrollSubscriptionDeviceInput,
   ): Promise<SubscriptionRecord>;
   create(input: CreateSubscriptionInput): Promise<SubscriptionRecord>;
   groupCreationOptions(

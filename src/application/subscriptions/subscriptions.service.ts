@@ -44,7 +44,7 @@ const allowedTransitions: Record<SubscriptionStatus, SubscriptionStatus[]> = {
 export interface CreateSubscriptionCommand {
   clientId: string;
   planVersionId: string;
-  deviceId: string;
+  deviceId?: string;
   startsAt?: string;
   expiresAt?: string;
   notes?: string;
@@ -178,13 +178,17 @@ export class SubscriptionsService {
     canManageFeatures = false,
   ) {
     this.assertFeatureAuthority(input, canManageFeatures);
-    const deviceId = this.normalizeDeviceId(input.deviceId);
-    const assignedDevice = await this.subscriptions.findByDeviceId(deviceId);
-    if (assignedDevice) {
-      throw new ConflictError(
-        'Device ID is already assigned to another subscription.',
-        'DEVICE_ALREADY_ASSIGNED',
-      );
+    const deviceId = input.deviceId
+      ? this.normalizeDeviceId(input.deviceId)
+      : undefined;
+    if (deviceId) {
+      const assignedDevice = await this.subscriptions.findByDeviceId(deviceId);
+      if (assignedDevice) {
+        throw new ConflictError(
+          'Device ID is already assigned to another subscription.',
+          'DEVICE_ALREADY_ASSIGNED',
+        );
+      }
     }
 
     const client = await this.clients.findById(input.clientId);
@@ -212,6 +216,7 @@ export class SubscriptionsService {
       metadata: {
         featureOverrides: terms.featureOverrides,
         webDashboardEnabled: input.webDashboardEnabled,
+        deviceAssigned: Boolean(deviceId),
       },
     });
     return subscription;
@@ -539,6 +544,42 @@ export class SubscriptionsService {
     return updated;
   }
 
+  async enrollDevice(
+    id: string,
+    input: { deviceId: string; storeId?: string; label?: string },
+    actorId: string,
+  ) {
+    const subscription = await this.get(id);
+    const normalizedDeviceId = this.normalizeDeviceId(input.deviceId);
+    const assignedDevice =
+      await this.subscriptions.findByDeviceId(normalizedDeviceId);
+    if (assignedDevice) {
+      throw new ConflictError(
+        'Device ID is already assigned to another subscription.',
+        'DEVICE_ALREADY_ASSIGNED',
+      );
+    }
+    const updated = await this.subscriptions.enrollDevice({
+      subscriptionId: subscription.id,
+      clientId: subscription.clientId,
+      storeId: input.storeId,
+      deviceInstallationId: normalizedDeviceId,
+      label: input.label?.trim() || undefined,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'subscription.device_enrolled',
+      resourceType: 'subscription',
+      resourceId: id,
+      metadata: {
+        deviceId: normalizedDeviceId,
+        storeId: input.storeId,
+        label: input.label?.trim() || undefined,
+      },
+    });
+    return updated;
+  }
+
   private invalidLicense(code: string, message: string, checkedAt: Date) {
     return { valid: false, code, message, checkedAt, subscription: null };
   }
@@ -612,7 +653,8 @@ export class SubscriptionsService {
         amount: version.amount,
         currency: version.currency,
         billingInterval: version.billingInterval,
-        maxDevices: 1,
+        maxDevices: version.maxDevices,
+        maxStores: version.maxStores,
         entitlements: {
           ...version.features,
           ...featureOverrides,

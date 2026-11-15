@@ -155,9 +155,42 @@ describe('AdminPortalAccessService', () => {
     expect(transaction.portalInvitation.create).not.toHaveBeenCalled();
   });
 
-  it('rejects stores without an active registered dashboard device', async () => {
+  it('allows an owner invitation before the first POS device is enrolled', async () => {
     prisma.store.findMany.mockResolvedValue([
       { ...eligibleStore('store-1'), devices: [] },
+    ]);
+    prisma.portalUser.findUnique.mockResolvedValue(null);
+    prisma.portalInvitation.findFirst.mockResolvedValue(null);
+    transaction.portalInvitation.create.mockImplementation(
+      ({ data }: { data: object }) => ({
+        id: 'invitation-1',
+        role: 'OWNER',
+        expiresAt: new Date('2026-10-24T00:00:00.000Z'),
+        ...data,
+      }),
+    );
+
+    const result = await service.inviteOrAddAccess(
+      {
+        username: 'owner@example.com',
+        displayName: 'Owner',
+        role: 'OWNER',
+        storeIds: ['store-1'],
+      },
+      actor(),
+    );
+
+    expect(result.mode).toBe('INVITATION_CREATED');
+  });
+
+  it('rejects stores without a dashboard-enabled tenant subscription', async () => {
+    const store = eligibleStore('store-1');
+    prisma.store.findMany.mockResolvedValue([
+      {
+        ...store,
+        devices: [],
+        client: { ...store.client, subscriptions: [] },
+      },
     ]);
 
     await expect(
@@ -221,6 +254,12 @@ function eligibleStore(id: string) {
       status: 'ACTIVE',
       groupId: 'group-1',
       group: { code: 'CONNECTED', name: 'Connected Stores' },
+      subscriptions: [
+        {
+          status: 'ACTIVE',
+          entitlements: { webDashboard: true },
+        },
+      ],
     },
     activeSnapshot: {
       snapshotCreatedAt: new Date('2026-10-22T00:00:00.000Z'),

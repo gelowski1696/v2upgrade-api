@@ -74,6 +74,13 @@ export class PlanVersionDto {
   @Max(1000)
   maxDevices?: number;
 
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxStores?: number;
+
   @ApiPropertyOptional({ type: Object })
   @IsOptional()
   @IsObject()

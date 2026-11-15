@@ -20,6 +20,7 @@ import { RolesGuard } from '../auth/roles.guard.js';
 import {
   CreateSubscriptionDto,
   CreateGroupSubscriptionsDto,
+  EnrollDeviceDto,
   RenewSubscriptionDto,
   SubscriptionActionDto,
   SubscriptionPageQueryDto,
@@ -92,6 +93,16 @@ export class SubscriptionsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.subscriptions.assignDevice(id, input.deviceId, user.id);
+  }
+
+  @Post(':id/devices')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'OPERATOR')
+  enrollDevice(
+    @Param('id') id: string,
+    @Body() input: EnrollDeviceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.enrollDevice(id, input, user.id);
   }
 
   @Patch(':id/feature-mods')

@@ -1,0 +1,5 @@
+ALTER TABLE "plan_versions"
+ADD COLUMN "max_stores" INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE "subscriptions"
+ADD COLUMN "max_stores" INTEGER NOT NULL DEFAULT 1;

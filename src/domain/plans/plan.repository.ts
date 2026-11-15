@@ -14,6 +14,7 @@ export interface PlanVersionRecord {
   trialDays: number;
   graceDays: number;
   maxDevices: number;
+  maxStores: number;
   features: Record<string, unknown>;
   publishedAt: Date | null;
   createdAt: Date;
@@ -36,6 +37,7 @@ export interface PlanVersionInput {
   trialDays?: number;
   graceDays?: number;
   maxDevices?: number;
+  maxStores?: number;
   features?: Record<string, unknown>;
 }
 
