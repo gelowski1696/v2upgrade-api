@@ -5,6 +5,7 @@ import { PortalService } from '../application/portal/portal.service.js';
 import { AdminPortalAccessService } from '../application/portal/admin-portal-access.service.js';
 import { PortalDashboardService } from '../application/portal/portal-dashboard.service.js';
 import { PortalScheduledReportsService } from '../application/portal/portal-scheduled-reports.service.js';
+import { PortalTenantManagementService } from '../application/portal/portal-tenant-management.service.js';
 import { Argon2PasswordHasher } from '../infrastructure/auth/argon2-password-hasher.js';
 import { PortalJwtStrategy } from '../infrastructure/auth/portal-jwt.strategy.js';
 import { DevicePortalController } from '../presentation/http/portal/device-portal.controller.js';
@@ -14,6 +15,7 @@ import { PortalDashboardController } from '../presentation/http/portal/portal-da
 import { PortalReportSchedulesController } from '../presentation/http/portal/portal-report-schedules.controller.js';
 import { ResendWebhookController } from '../presentation/http/webhooks/resend-webhook.controller.js';
 import { AdminPortalAccessController } from '../presentation/http/portal/admin-portal-access.controller.js';
+import { PortalTenantManagementController } from '../presentation/http/portal/portal-tenant-management.controller.js';
 import { PortalMailerService } from '../infrastructure/email/portal-mailer.service.js';
 import { DeviceSyncModule } from './device-sync.module.js';
 import { StoreDatabaseModule } from './store-database.module.js';
@@ -34,6 +36,7 @@ import { AuthModule } from './auth.module.js';
     PortalReportSchedulesController,
     ResendWebhookController,
     AdminPortalAccessController,
+    PortalTenantManagementController,
   ],
   providers: [
     PortalService,
@@ -44,6 +47,7 @@ import { AuthModule } from './auth.module.js';
     PortalAuthGuard,
     Argon2PasswordHasher,
     AdminPortalAccessService,
+    PortalTenantManagementService,
   ],
   exports: [PortalAuthGuard],
 })
