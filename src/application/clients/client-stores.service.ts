@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { StoreStatus } from '../../generated/prisma/enums.js';
-import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['TRIAL', 'ACTIVE', 'GRACE'] as const;
 

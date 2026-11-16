@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type { AuthenticatedPortalUser } from '../../domain/portal/portal-auth.types.js';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['TRIAL', 'ACTIVE', 'GRACE'] as const;

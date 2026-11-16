@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type { Prisma } from '../../generated/prisma/client.js';
 
 export type MasterDataEntityType =

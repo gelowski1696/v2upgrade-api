@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
-import type { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import type {
   AuthenticatedPortalUser,
   PortalRole,
