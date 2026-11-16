@@ -70,22 +70,34 @@ export class PortalJwtStrategy extends PassportStrategy(
       throw new UnauthorizedException('Portal account is unavailable.');
     }
     const storeIds = session.user.storeAccess.map((access) => access.storeId);
-    const devices = await this.prisma.device.findMany({
-      where: { storeId: { in: storeIds }, status: 'ACTIVE' },
+    const stores = await this.prisma.store.findMany({
+      where: {
+        id: { in: storeIds },
+        status: 'ACTIVE',
+        client: { status: 'ACTIVE' },
+      },
       select: {
-        storeId: true,
-        subscription: { select: { status: true, entitlements: true } },
+        id: true,
+        client: {
+          select: {
+            subscriptions: {
+              where: { deletedAt: null },
+              select: { status: true, entitlements: true },
+            },
+          },
+        },
       },
     });
     const subscribedStores = new Set(
-      devices
-        .filter(
-          (device) =>
-            device.subscription &&
-            ['ACTIVE', 'TRIAL', 'GRACE'].includes(device.subscription.status) &&
-            webDashboardEnabled(device.subscription.entitlements),
+      stores
+        .filter((store) =>
+          store.client.subscriptions.some(
+            (subscription) =>
+              ['ACTIVE', 'TRIAL', 'GRACE'].includes(subscription.status) &&
+              webDashboardEnabled(subscription.entitlements),
+          ),
         )
-        .map((device) => device.storeId),
+        .map((store) => store.id),
     );
     const enabledStoreIds = storeIds.filter((storeId) =>
       subscribedStores.has(storeId),

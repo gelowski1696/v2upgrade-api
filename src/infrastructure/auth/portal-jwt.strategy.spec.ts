@@ -10,6 +10,7 @@ describe('PortalJwtStrategy subscription access', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    store: { findMany: jest.fn() },
     device: { findMany: jest.fn() },
   };
   const config = {
@@ -40,12 +41,13 @@ describe('PortalJwtStrategy subscription access', () => {
   });
 
   it('rejects an existing access token after the store subscription is suspended', async () => {
-    prisma.device.findMany.mockResolvedValue([
+    prisma.store.findMany.mockResolvedValue([
       {
-        storeId: 'store-one',
-        subscription: {
-          status: 'SUSPENDED',
-          entitlements: { webDashboard: true },
+        id: 'store-one',
+        client: {
+          subscriptions: [
+            { status: 'SUSPENDED', entitlements: { webDashboard: true } },
+          ],
         },
       },
     ]);
@@ -58,6 +60,29 @@ describe('PortalJwtStrategy subscription access', () => {
         tokenUse: 'portal',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('allows an authorized owner before a desktop device is enrolled', async () => {
+    prisma.store.findMany.mockResolvedValue([
+      {
+        id: 'store-one',
+        client: {
+          subscriptions: [
+            { status: 'ACTIVE', entitlements: { webDashboard: true } },
+          ],
+        },
+      },
+    ]);
+
+    const user = await strategy.validate({
+      sub: 'portal-user',
+      clientId: 'client-one',
+      sessionId: 'session-one',
+      tokenUse: 'portal',
+    });
+
+    expect(user.storeIds).toEqual(['store-one']);
+    expect(prisma.device.findMany).not.toHaveBeenCalled();
   });
 
   it('removes suspended stores while preserving subscribed group access', async () => {
@@ -75,19 +100,21 @@ describe('PortalJwtStrategy subscription access', () => {
         storeAccess: [{ storeId: 'store-one' }, { storeId: 'store-two' }],
       },
     });
-    prisma.device.findMany.mockResolvedValue([
+    prisma.store.findMany.mockResolvedValue([
       {
-        storeId: 'store-one',
-        subscription: {
-          status: 'SUSPENDED',
-          entitlements: { webDashboard: true },
+        id: 'store-one',
+        client: {
+          subscriptions: [
+            { status: 'SUSPENDED', entitlements: { webDashboard: true } },
+          ],
         },
       },
       {
-        storeId: 'store-two',
-        subscription: {
-          status: 'ACTIVE',
-          entitlements: { webDashboard: true },
+        id: 'store-two',
+        client: {
+          subscriptions: [
+            { status: 'ACTIVE', entitlements: { webDashboard: true } },
+          ],
         },
       },
     ]);
