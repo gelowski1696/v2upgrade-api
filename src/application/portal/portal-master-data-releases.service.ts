@@ -26,17 +26,26 @@ export class PortalMasterDataReleasesService {
     input: Parameters<MasterDataReleasesService['createDraft']>[1],
   ) {
     await this.requireOwnerAccess(user);
-    return this.releases.createDraft(user.clientId, input, user.id);
+    return this.releases.createDraft(user.clientId, input, {
+      kind: 'PORTAL_USER',
+      id: user.id,
+    });
   }
 
   async publish(user: AuthenticatedPortalUser, releaseId: string) {
     await this.requireOwnerAccess(user);
-    return this.releases.publish(user.clientId, releaseId, user.id);
+    return this.releases.publish(user.clientId, releaseId, {
+      kind: 'PORTAL_USER',
+      id: user.id,
+    });
   }
 
   async rollback(user: AuthenticatedPortalUser, releaseId: string) {
     await this.requireOwnerAccess(user);
-    return this.releases.rollback(user.clientId, releaseId, user.id);
+    return this.releases.rollback(user.clientId, releaseId, {
+      kind: 'PORTAL_USER',
+      id: user.id,
+    });
   }
 
   private async requireOwnerAccess(

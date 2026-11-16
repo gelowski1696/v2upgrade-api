@@ -101,6 +101,39 @@ describe('MasterDataReleasesService', () => {
     expect(transaction.$queryRaw).toHaveBeenCalled();
   });
 
+  it('records a portal owner as the release actor without using the admin-user foreign key', async () => {
+    await service.createDraft(
+      'client-1',
+      {
+        entries: [
+          {
+            entityType: 'PRODUCT',
+            operation: 'UPSERT',
+            stableKey: 'PRODUCT-11KG',
+            payload: { name: 'LPG 11kg' },
+          },
+        ],
+      },
+      { kind: 'PORTAL_USER', id: 'portal-user-1' },
+    );
+
+    expect(transaction.masterDataRelease.create.mock.calls[0]?.[0].data).toEqual(
+      expect.objectContaining({
+        createdByPortalUserId: 'portal-user-1',
+      }),
+    );
+    expect(transaction.masterDataRelease.create.mock.calls[0]?.[0].data.createdById).toBeUndefined();
+    expect(transaction.auditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        actorId: null,
+        metadata: expect.objectContaining({
+          actorType: 'PORTAL_USER',
+          portalUserId: 'portal-user-1',
+        }),
+      }),
+    });
+  });
+
   it('rejects a release when the tenant has no active subscription', async () => {
     transaction.subscription.findFirst.mockResolvedValue(null);
 

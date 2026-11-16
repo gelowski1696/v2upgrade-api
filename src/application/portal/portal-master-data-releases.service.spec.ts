@@ -58,4 +58,13 @@ describe('PortalMasterDataReleasesService', () => {
       ForbiddenException,
     );
   });
+
+  it('passes the portal owner actor to master-data writes', async () => {
+    await service.createDraft(owner, { entries: [] });
+    expect(releases.createDraft).toHaveBeenCalledWith(
+      'client-1',
+      { entries: [] },
+      { kind: 'PORTAL_USER', id: 'portal-owner' },
+    );
+  });
 });

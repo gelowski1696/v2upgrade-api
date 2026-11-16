@@ -375,13 +375,15 @@ model MasterDataRelease {
   status       MasterDataReleaseStatus  @default(DRAFT)
   releaseHash  String?                  @map("release_hash") @db.Char(64)
   notes        String?
-  createdById  String                   @map("created_by_id") @db.Uuid
+  createdById  String?                  @map("created_by_id") @db.Uuid
+  createdByPortalUserId String?         @map("created_by_portal_user_id") @db.Uuid
   publishedAt  DateTime?                @map("published_at") @db.Timestamptz(3)
   rolledBackAt DateTime?                @map("rolled_back_at") @db.Timestamptz(3)
   createdAt    DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
   client       Client                   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  createdBy    User                     @relation("MasterDataReleaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy    User?                    @relation("MasterDataReleaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdByPortalUser PortalUser?       @relation("MasterDataReleaseCreatedByPortalUser", fields: [createdByPortalUserId], references: [id], onDelete: Restrict)
   entries      MasterDataReleaseEntry[]
 
   @@unique([clientId, version])
@@ -456,6 +458,7 @@ model PortalUser {
   dashboardPreference PortalDashboardPreference?
   savedViews          PortalSavedView[]
   webAnalyticsEvents  WebAnalyticsEvent[]
+  masterDataReleases  MasterDataRelease[] @relation("MasterDataReleaseCreatedByPortalUser")
 
   @@index([clientId, status])
   @@map("portal_users")

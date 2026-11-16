@@ -24,6 +24,10 @@ export interface CreateMasterDataReleaseInput {
   notes?: string;
 }
 
+export type MasterDataActor =
+  | string
+  | { kind: 'USER' | 'PORTAL_USER'; id: string };
+
 const ACTIVE_SUBSCRIPTION_STATUSES = ['TRIAL', 'ACTIVE', 'GRACE'] as const;
 
 @Injectable()
@@ -65,7 +69,7 @@ export class MasterDataReleasesService {
   async createDraft(
     clientId: string,
     input: CreateMasterDataReleaseInput,
-    actorId: string,
+    actor: MasterDataActor,
   ) {
     const entries = this.normalizeEntries(input.entries);
     return this.prisma.$transaction(async (transaction) => {
@@ -106,7 +110,7 @@ export class MasterDataReleasesService {
           version,
           status: 'DRAFT',
           notes: input.notes?.trim() || null,
-          createdById: actorId,
+          ...this.releaseActorFields(actor),
           entries: {
             create: entries.map((entry) => ({
               entityType: entry.entityType,
@@ -120,18 +124,23 @@ export class MasterDataReleasesService {
       });
       await transaction.auditLog.create({
         data: {
-          actorId,
+          ...this.auditActorFields(actor),
           action: 'master_data.release_created',
           resourceType: 'master_data_release',
           resourceId: release.id,
-          metadata: { clientId, version, entryCount: entries.length },
+          metadata: {
+            ...this.auditActorMetadata(actor),
+            clientId,
+            version,
+            entryCount: entries.length,
+          },
         },
       });
       return release;
     });
   }
 
-  async publish(clientId: string, releaseId: string, actorId: string) {
+  async publish(clientId: string, releaseId: string, actor: MasterDataActor) {
     return this.prisma.$transaction(async (transaction) => {
       const release = await transaction.masterDataRelease.findFirst({
         where: { id: releaseId, clientId },
@@ -150,18 +159,23 @@ export class MasterDataReleasesService {
       });
       await transaction.auditLog.create({
         data: {
-          actorId,
+          ...this.auditActorFields(actor),
           action: 'master_data.release_published',
           resourceType: 'master_data_release',
           resourceId: releaseId,
-          metadata: { clientId, version: release.version, releaseHash },
+          metadata: {
+            ...this.auditActorMetadata(actor),
+            clientId,
+            version: release.version,
+            releaseHash,
+          },
         },
       });
       return published;
     });
   }
 
-  async rollback(clientId: string, releaseId: string, actorId: string) {
+  async rollback(clientId: string, releaseId: string, actor: MasterDataActor) {
     return this.prisma.$transaction(async (transaction) => {
       const release = await transaction.masterDataRelease.findFirst({
         where: { id: releaseId, clientId },
@@ -179,11 +193,15 @@ export class MasterDataReleasesService {
       });
       await transaction.auditLog.create({
         data: {
-          actorId,
+          ...this.auditActorFields(actor),
           action: 'master_data.release_rolled_back',
           resourceType: 'master_data_release',
           resourceId: releaseId,
-          metadata: { clientId, version: release.version },
+          metadata: {
+            ...this.auditActorMetadata(actor),
+            clientId,
+            version: release.version,
+          },
         },
       });
       return updated;
@@ -227,5 +245,24 @@ export class MasterDataReleasesService {
         ),
       );
     return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  }
+
+  private releaseActorFields(actor: MasterDataActor) {
+    if (typeof actor === 'string' || actor.kind === 'USER') {
+      return { createdById: typeof actor === 'string' ? actor : actor.id };
+    }
+    return { createdByPortalUserId: actor.id };
+  }
+
+  private auditActorFields(actor: MasterDataActor) {
+    if (typeof actor === 'string' || actor.kind === 'USER') {
+      return { actorId: typeof actor === 'string' ? actor : actor.id };
+    }
+    return { actorId: null };
+  }
+
+  private auditActorMetadata(actor: MasterDataActor) {
+    if (typeof actor === 'string' || actor.kind === 'USER') return {};
+    return { actorType: 'PORTAL_USER', portalUserId: actor.id };
   }
 }
