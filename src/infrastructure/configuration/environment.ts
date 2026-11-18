@@ -76,6 +76,19 @@ export function validateEnvironment(config: Environment): Environment {
     config.PORTAL_PASSWORD_RESET_TTL_MINUTES,
     60,
   );
+  const deviceEnrollmentMinutes = numberValue(
+    config.DEVICE_ENROLLMENT_TTL_MINUTES,
+    30,
+  );
+  if (
+    !Number.isInteger(deviceEnrollmentMinutes) ||
+    deviceEnrollmentMinutes < 5 ||
+    deviceEnrollmentMinutes > 1_440
+  ) {
+    throw new Error(
+      'DEVICE_ENROLLMENT_TTL_MINUTES must be an integer from 5 to 1440.',
+    );
+  }
   if (
     !Number.isInteger(portalPasswordResetMinutes) ||
     portalPasswordResetMinutes < 1
@@ -160,6 +173,11 @@ export function validateEnvironment(config: Environment): Environment {
     ADMIN_REFRESH_REUSE_GRACE_SECONDS: adminRefreshReuseGraceSeconds,
     LICENSE_LEASE_DAYS: numberValue(config.LICENSE_LEASE_DAYS, 7),
     DEVICE_TOKEN_TTL: stringValue(config.DEVICE_TOKEN_TTL, '12h'),
+    DEVICE_ENROLLMENT_TTL_MINUTES: deviceEnrollmentMinutes,
+    MASTER_DATA_MIN_APP_VERSION: stringValue(
+      config.MASTER_DATA_MIN_APP_VERSION,
+      '0.2.9',
+    ),
     PORTAL_ACCESS_TOKEN_TTL: stringValue(config.PORTAL_ACCESS_TOKEN_TTL, '15m'),
     PORTAL_REFRESH_TOKEN_TTL_DAYS: numberValue(
       config.PORTAL_REFRESH_TOKEN_TTL_DAYS,

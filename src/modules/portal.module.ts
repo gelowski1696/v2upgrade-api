@@ -25,6 +25,8 @@ import { DeviceSyncModule } from './device-sync.module.js';
 import { StoreDatabaseModule } from './store-database.module.js';
 import { AuthModule } from './auth.module.js';
 import { MasterDataModule } from './master-data.module.js';
+import { DeviceEnrollmentService } from '../application/device-enrollment/device-enrollment.service.js';
+import { DeviceEnrollmentController } from '../presentation/http/device-enrollment/device-enrollment.controller.js';
 
 @Module({
   imports: [
@@ -45,6 +47,7 @@ import { MasterDataModule } from './master-data.module.js';
     PortalTenantManagementController,
     PortalTenantUsersController,
     PortalMasterDataReleasesController,
+    DeviceEnrollmentController,
   ],
   providers: [
     PortalService,
@@ -58,6 +61,7 @@ import { MasterDataModule } from './master-data.module.js';
     PortalTenantManagementService,
     PortalTenantUsersService,
     PortalMasterDataReleasesService,
+    DeviceEnrollmentService,
   ],
   exports: [PortalAuthGuard],
 })
